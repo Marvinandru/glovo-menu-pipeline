@@ -44,7 +44,10 @@ body{
 
 /* STEPS */
 .steps{display:flex;margin-bottom:32px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
-.step-item{flex:1;padding:14px 16px;display:flex;align-items:center;gap:10px;border-right:1px solid var(--border);transition:.2s}
+.step-item{flex:1;padding:14px 16px;display:flex;align-items:center;gap:10px;border-right:1px solid var(--border);transition:.2s;cursor:pointer}
+.step-item:hover{background:var(--surface2)}
+.step-item.active:hover{background:var(--orange-pale)}
+.step-item.done:hover{background:var(--green-pale)}
 .step-item:last-child{border-right:none}
 .step-item.active{background:var(--orange-pale)}
 .step-item.done{background:var(--green-pale)}
@@ -243,14 +246,24 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v6.3</div>
+  <div class="badge">v6.4</div>
 </div>
 
 <!-- STEPS -->
 <div class="steps">
-  <div class="step-item active" id="pill1"><div class="step-num">1</div><div class="step-label">Upload &amp; Parse</div></div>
-  <div class="step-item" id="pill2"><div class="step-num">2</div><div class="step-label">Review &amp; Copy Prompts</div></div>
-  <div class="step-item" id="pill3"><div class="step-num">3</div><div class="step-label">Download &amp; ZIP</div></div>
+  <div class="step-item active" id="pill1" onclick="jumpTo(1)" style="cursor:pointer" title="Go to Step 1"><div class="step-num">1</div><div class="step-label">Upload &amp; Parse</div></div>
+  <div class="step-item" id="pill2" onclick="jumpTo(2)" style="cursor:pointer" title="Go to Step 2"><div class="step-num">2</div><div class="step-label">Review &amp; Copy Prompts</div></div>
+  <div class="step-item" id="pill3" onclick="jumpTo(3)" style="cursor:pointer" title="Go to Step 3 — Upload Images &amp; ZIP"><div class="step-num">3</div><div class="step-label">Download &amp; ZIP</div></div>
+</div>
+
+<!-- QUICK ACCESS BAR -->
+<div id="quickBar" style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+  <button class="btn btn-outline btn-sm" onclick="jumpTo(3)" style="flex:1;justify-content:center">
+    🗂 Skip to Step 3 — Upload Images &amp; ZIP
+  </button>
+  <button class="btn btn-outline btn-sm" onclick="jumpTo(2)" style="flex:1;justify-content:center">
+    📋 Skip to Step 2 — Review Prompts
+  </button>
 </div>
 
 <!-- ═══ STEP 1 ═══ -->
@@ -546,6 +559,36 @@ function showOnly(id){['s1','s2','s3'].forEach(s=>$(s).classList.add('hidden'));
 function goStep1(){showOnly('s1');setPill(1,'active');setPill(2,'');setPill(3,'');$('s2body').classList.add('hidden');$('progWrap').classList.remove('hidden');setProgress(0,'')}
 function goStep2(){showOnly('s2');$('progWrap').classList.add('hidden');$('s2body').classList.remove('hidden');setPill(1,'done');setPill(2,'active');setPill(3,'')}
 function goStep3(){showOnly('s3');setPill(1,'done');setPill(2,'done');setPill(3,'active');renderExpected()}
+
+// Jump to any step directly — even without parsed data
+function jumpTo(n){
+  if(n===1){ goStep1(); return; }
+  if(n===2){
+    // If no menu data, show empty step 2 with a helpful message
+    showOnly('s2');
+    $('progWrap').classList.add('hidden');
+    $('s2body').classList.remove('hidden');
+    setPill(1,'done');setPill(2,'active');setPill(3,'');
+    if(!menuItems.length){
+      $('statBar').innerHTML=`<div class="alert alert-warn" style="width:100%">⚠ No menu parsed yet. Go back to Step 1 to upload and parse a menu first — or jump to Step 3 to upload images directly.</div>`;
+    }
+    return;
+  }
+  if(n===3){
+    // Allow going to Step 3 directly without any parsed data
+    showOnly('s3');
+    setPill(1,'done');setPill(2,'done');setPill(3,'active');
+    if(!uniqueItems.length){
+      // Show a free-rename mode — no menu needed, just upload and ZIP
+      $('expectedList').innerHTML=`<div class="alert alert-info">
+        <strong>Free Rename Mode</strong> — No menu parsed. Upload your images and they will be included in the ZIP with their original names. Parse a menu in Step 1 first to enable auto-renaming.
+      </div>`;
+    } else {
+      renderExpected();
+    }
+    return;
+  }
+}
 function showTab(e,id){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));e.target.classList.add('active');$(id).classList.add('active')}
 
 // ══ FILE UPLOAD ══
