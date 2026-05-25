@@ -410,7 +410,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v7.3</div>
+  <div class="badge">v7.4</div>
 </div>
 
 <!-- STEPS -->
@@ -625,9 +625,20 @@ tbody tr:hover td{background:var(--surface2)}
     </div>
     <div class="out-card">
       <span class="out-icon">🖼</span>
-      <h3>Prompts Text File</h3>
-      <p>All prompts as a plain .txt<br>Paste into Flow Image Automator</p>
-      <button class="btn btn-outline btn-full" onclick="dlPromptsText()">⬇ Download Prompts .txt</button>
+      <h3>TurboFlow Prompts</h3>
+      <p>Download prompts for image generation</p>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button class="btn btn-outline btn-sm" style="flex:1;font-size:11px" onclick="dlPromptsChoice('full')" title="TurboFlow Pro — unlimited">
+          ⬇ Full Menu
+        </button>
+        <button class="btn btn-outline btn-sm" style="flex:1;font-size:11px" onclick="dlPromptsChoice('batch')" title="Free tier — 30/day">
+          ⬇ 30/day Batches
+        </button>
+      </div>
+      <div style="font-size:10px;color:var(--text3);line-height:1.5">
+        <strong>Full Menu</strong> = TurboFlow Pro (unlimited)<br>
+        <strong>30/day</strong> = Free tier batches
+      </div>
     </div>
   </div>
 
@@ -1136,20 +1147,34 @@ function dlExcel(){
   XLSX.writeFile(wb,getRestName()+'_Glovo_Menu.xlsx');
 }
 
-function dlPromptsText(){
-  if(!allPrompts.length){alert('No prompts yet.');return;}
-  const size=parseInt($('batchSize').value);
-  const numBatches=Math.ceil(allPrompts.length/size);
-  // Download all batches as separate files
-  for(let b=0;b<numBatches;b++){
-    const start=b*size;const end=Math.min((b+1)*size,allPrompts.length);
-    const batchPrompts=allPrompts.slice(start,end);
-    const label=numBatches===1?'All':('Day'+(b+1)+'_of_'+numBatches);
-    const text=batchPrompts.map((p,i)=>`${start+i+1}. ${p.name}\n${p.prompt}`).join('\n\n---\n\n');
+function dlPromptsText(){dlPromptsChoice('batch');}
+function dlPromptsChoice(mode){
+  if(!allPrompts.length){alert('No prompts yet. Parse a menu first.');return;}
+  const name=getRestName();
+  if(mode==='full'){
+    // Single file with all prompts — for TurboFlow Pro
+    const text=allPrompts.map((p,i)=>`${i+1}. ${p.name}\n${p.prompt}`).join('\n\n---\n\n');
     const blob=new Blob([text],{type:'text/plain;charset=utf-8;'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-    a.download=getRestName()+'_Prompts_'+label+'.txt';
-    setTimeout(()=>a.click(),b*300);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=name+'_ALL_'+allPrompts.length+'_Prompts_TurboFlowPro.txt';
+    a.click();
+  } else {
+    // 30 per day batches — for TurboFlow free
+    const size=30;
+    const numBatches=Math.ceil(allPrompts.length/size);
+    for(let b=0;b<numBatches;b++){
+      const start=b*size;
+      const end=Math.min((b+1)*size,allPrompts.length);
+      const batchPrompts=allPrompts.slice(start,end);
+      const label=numBatches===1?'All':('Day'+(b+1)+'_of_'+numBatches+'_('+batchPrompts.length+'_prompts)');
+      const text=batchPrompts.map((p,i)=>`${start+i+1}. ${p.name}\n${p.prompt}`).join('\n\n---\n\n');
+      const blob=new Blob([text],{type:'text/plain;charset=utf-8;'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=name+'_Prompts_'+label+'.txt';
+      setTimeout((el=>()=>el.click())(a), b*400);
+    }
   }
 }
 
@@ -1186,11 +1211,63 @@ function onImgFiles(input){
     if(na&&nb) return parseInt(na)-parseInt(nb);
     return a.name.localeCompare(b.name);
   });
-  // Create object URLs for thumbnails
-  files.forEach(f=>{imageObjectURLs[f.name]=URL.createObjectURL(f);});
-  doMatch(files);
+  // Create object URLs for thumbnails — store by filename
+  files.forEach(f=>{ imageObjectURLs[f.name]=URL.createObjectURL(f); });
+
+  // Smart auto-match: try name similarity first, fall back to order
+  doSmartMatch(files);
   renderVisualMatch();
   $('matchSection').classList.remove('hidden');
+}
+
+// Smart matching: combine name similarity + order fallback
+function doSmartMatch(files){
+  matchedImages=[];
+  const usedFiles=new Set();
+
+  // Pass 1: exact/strong name matches
+  uniqueItems.forEach(it=>{
+    const nk=norm(it.imageKey);
+    let best=null, bestScore=-1;
+    files.forEach(f=>{
+      if(usedFiles.has(f.name)) return;
+      const base=f.name.replace(/\.[^.]+$/,'');
+      const nf=norm(base);
+      let score=0;
+      if(nf===nk) score=100;
+      else if(nf.includes(nk)||nk.includes(nf)) score=70;
+      else {
+        const kT=nk.match(/[a-z0-9]+/g)||[];
+        const fT=nf.match(/[a-z0-9]+/g)||[];
+        const overlap=kT.filter(t=>fT.includes(t)).length;
+        if(overlap>0) score=overlap*15;
+      }
+      if(score>bestScore){bestScore=score;best=f;}
+    });
+    if(bestScore>=30){
+      usedFiles.add(best.name);
+      matchedImages.push({key:it.imageKey,file:best,matched:true,autoNamed:true});
+    } else {
+      matchedImages.push({key:it.imageKey,file:null,matched:false,autoNamed:false});
+    }
+  });
+
+  // Pass 2: fill unmatched slots with remaining files in order
+  const unmatched=matchedImages.filter(m=>!m.matched);
+  const remaining=files.filter(f=>!usedFiles.has(f.name));
+  remaining.forEach((f,i)=>{
+    if(i<unmatched.length){
+      unmatched[i].file=f;
+      unmatched[i].matched=true;
+      unmatched[i].autoNamed=false; // order-based, needs verification
+      usedFiles.add(f.name);
+    }
+  });
+
+  // Any leftover files
+  files.filter(f=>!usedFiles.has(f.name)).forEach(f=>{
+    matchedImages.push({key:f.name.replace(/\.[^.]+$/,''),file:f,matched:true,extra:true,autoNamed:false});
+  });
 }
 
 function doMatch(files){
@@ -1243,28 +1320,39 @@ function renderVisualMatch(){
   grid.innerHTML=items.map((m,i)=>{
     const vs=verifyState[m.key]||'';
     const rowCls=vs==='ok'?'correct':vs==='bad'?'wrong':'unset';
-    const thumbUrl=m.file?imageObjectURLs[m.file.name]:'';
+    const thumbUrl=m.file&&imageObjectURLs[m.file.name]?imageObjectURLs[m.file.name]:'';
+    const autoLabel=m.autoNamed
+      ?'<span style="font-size:9px;background:var(--green-pale);color:var(--green);padding:1px 6px;border-radius:8px;font-weight:700;margin-left:4px">AUTO</span>'
+      :(m.file?'<span style="font-size:9px;background:var(--gold-pale);color:var(--gold);padding:1px 6px;border-radius:8px;font-weight:600;margin-left:4px">ORDER</span>':'');
     const thumbHtml=thumbUrl
-      ?`<img class="vmatch-thumb" src="${thumbUrl}" onclick="openLightbox('${thumbUrl}')" title="Click to enlarge">`
-      :`<div class="vmatch-thumb" style="display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--border2)">?</div>`;
+      ?`<img class="vmatch-thumb" src="${thumbUrl}" alt="${m.key}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" onclick="openLightbox('${thumbUrl}')" title="Click to enlarge"><div class="vmatch-thumb" style="display:none;align-items:center;justify-content:center;font-size:22px">🖼</div>`
+      :`<div class="vmatch-thumb" style="display:flex;align-items:center;justify-content:center;font-size:22px">${m.file?'🔄':'❓'}</div>`;
     const okCls='vmatch-btn ok'+(vs==='ok'?' sel':'');
     const badCls='vmatch-btn bad'+(vs==='bad'?' sel':'');
     return `<div class="vmatch-row ${rowCls}" id="vmrow_${i}">
       ${thumbHtml}
       <div class="vmatch-info">
-        <div class="vmatch-num">#${i+1}</div>
+        <div class="vmatch-num">#${i+1} ${autoLabel}</div>
         <div class="vmatch-name">${m.key}</div>
-        <div class="vmatch-fname">${m.file?m.file.name:'⚠ No image uploaded'}</div>
+        <div class="vmatch-fname" style="color:${m.file?'var(--text3)':'#EF4444'}">${m.file?m.file.name:'⚠ No image — will be skipped'}</div>
       </div>
       <div class="vmatch-actions">
         ${m.file?`
-        <button class="${okCls}" onclick="setVerify('${m.key}',${i},'ok')">✓ Correct</button>
-        <button class="${badCls}" onclick="setVerify('${m.key}',${i},'bad')">✗ Wrong</button>
-        <button class="vmatch-reassign" onclick="openReassign(${i})">Reassign →</button>`
-        :'<span style="font-size:10px;color:var(--text3)">Missing</span>'}
+        <button class="${okCls}" onclick="setVerify('${m.key.replace(/'/g,"\'")}',${i},'ok')">✓ OK</button>
+        <button class="${badCls}" onclick="setVerify('${m.key.replace(/'/g,"\'")}',${i},'bad')">✗ Wrong</button>
+        <button class="vmatch-reassign" onclick="openReassign(${i})">Reassign</button>`
+        :'<span style="font-size:10px;color:#EF4444">Missing</span>'}
       </div>
     </div>`;
   }).join('');
+  // After rendering, trigger a small delay then force-set img srcs to ensure they load
+  setTimeout(()=>{
+    grid.querySelectorAll('img.vmatch-thumb').forEach(img=>{
+      if(!img.complete||img.naturalHeight===0){
+        const src=img.src; img.src=''; img.src=src;
+      }
+    });
+  }, 100);
 
   // Update alert
   const al=$('matchAlert');
@@ -1360,7 +1448,7 @@ function switchMatchMode(mode){
   if(input.files&&input.files.length>0){
     const files=Array.from(input.files);
     files.sort((a,b)=>{const na=a.name.replace(/[^0-9]/g,'');const nb=b.name.replace(/[^0-9]/g,'');if(na&&nb)return parseInt(na)-parseInt(nb);return a.name.localeCompare(b.name);});
-    doMatch(files);renderVisualMatch();
+    doSmartMatch(files);renderVisualMatch();
   }
 }
 
