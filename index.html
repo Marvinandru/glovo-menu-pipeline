@@ -243,7 +243,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v6.1</div>
+  <div class="badge">v6.2</div>
 </div>
 
 <!-- STEPS -->
@@ -628,13 +628,13 @@ async function runParse(){
     content.push({type:'text',text:uploadedFileData?'Extract all menu items from this menu.':'Extract all menu items:\n\n'+text});
     setProgress(20,'Claude is reading the menu...');
 
-    const system=`You are a menu data extraction specialist for food delivery platforms. Extract ALL menu items and return ONLY a valid JSON array. No markdown, no code fences, no explanation.\n\nRules:\n- Extract every item: mains, extras, sides, drinks, deals — nothing skipped\n- For pizza/items with multiple sizes (Regular/Medium/Large), list EACH size as a separate row: "The Margherita (Regular)", "The Margherita (Medium)", "The Margherita (Large)"\n- imageKey for pizza size variants = BASE NAME ONLY, e.g. "The Margherita"\n- imageKey for all other items = exact item name\n- Description: short, ingredient-focused, max 12 words\n- Prices include the ${currency} symbol\n\nExact JSON:\n[{"category":"","item":"","description":"","price":"","imageKey":""}]`;
+    const system=`You are a menu data extraction specialist for food delivery platforms. Extract ALL menu items and return ONLY a valid JSON array. No markdown, no code fences, no explanation. Be concise — keep descriptions under 10 words to fit within token limits.\n\nRules:\n- Extract every item: mains, extras, sides, drinks, deals — nothing skipped\n- For pizza/items with multiple sizes (Regular/Medium/Large), list EACH size as a separate row: "The Margherita (Regular)", "The Margherita (Medium)", "The Margherita (Large)"\n- imageKey for pizza size variants = BASE NAME ONLY, e.g. "The Margherita"\n- imageKey for all other items = exact item name\n- Description: short, ingredient-focused, MAX 8 WORDS, be very brief\n- Prices include the ${currency} symbol\n- Return COMPLETE valid JSON — do not stop mid-array\n\nExact JSON (return complete array, no truncation):\n[{"category":"","item":"","description":"","price":"","imageKey":""}]`;
 
     let resp;
     try{
-      resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,system,messages:[{role:'user',content}]})});
+      resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system,messages:[{role:'user',content}]})});
     }catch(corsErr){
-      const payload=JSON.stringify({model:'claude-sonnet-4-6',max_tokens:4000,system,messages:[{role:'user',content}]});
+      const payload=JSON.stringify({model:'claude-sonnet-4-6',max_tokens:8000,system,messages:[{role:'user',content}]});
       resp=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01'},body:payload});
     }
 
@@ -642,7 +642,33 @@ async function runParse(){
     if(!resp.ok){const e=await resp.json();throw new Error(e.error?.message||'API error '+resp.status);}
     const data=await resp.json();
     let raw=data.content[0].text.trim().replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'');
-    menuItems=JSON.parse(raw);
+
+    // Detect truncated JSON and repair it
+    const stopReason=data.stop_reason||'';
+    if(stopReason==='max_tokens' || (raw.length>0 && !raw.trimEnd().endsWith(']'))){
+      // Find the last complete object (ending with }) and close the array
+      const lastBrace=raw.lastIndexOf('}');
+      if(lastBrace>0){
+        raw=raw.substring(0,lastBrace+1)+']';
+        setProgress(75,'⚠ Large menu — response trimmed, repairing JSON...');
+      }
+    }
+
+    // Safe parse with fallback error message
+    let parsed;
+    try{
+      parsed=JSON.parse(raw);
+    }catch(parseErr){
+      // Try to find and fix common JSON issues
+      // Remove trailing comma before ]
+      raw=raw.replace(/,\s*]/g,']').replace(/,\s*}/g,'}');
+      try{
+        parsed=JSON.parse(raw);
+      }catch(e2){
+        throw new Error('Menu parsed but JSON was malformed. Try pasting the menu text directly instead of uploading the PDF — this gives more reliable results for large menus.');
+      }
+    }
+    menuItems=parsed;
     const seen={};uniqueItems=[];
     menuItems.forEach(it=>{if(!seen[it.imageKey]){seen[it.imageKey]=true;uniqueItems.push(it);}});
     // Build prompts array
