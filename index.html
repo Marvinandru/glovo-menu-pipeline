@@ -280,6 +280,28 @@ tbody tr:hover td{background:var(--surface2)}
 .excel-upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .excel-status{font-size:12px;color:var(--green);font-weight:600;margin-top:6px}
 
+/* ── ZIP PROGRESS ── */
+.zip-progress-wrap{
+  background:linear-gradient(135deg,var(--green-pale),#F0FDF4);
+  border:1px solid rgba(26,158,92,0.25);
+  border-radius:var(--r-sm);padding:18px 20px;
+  margin-top:14px;display:none;
+}
+.zip-progress-wrap.active{display:block}
+.zip-progress-title{font-size:13px;font-weight:700;color:#14532D;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.zip-progress-track{height:8px;background:rgba(26,158,92,0.15);border-radius:4px;overflow:hidden;margin-bottom:10px}
+.zip-progress-fill{height:100%;border-radius:4px;transition:width .3s ease;width:0;background:linear-gradient(90deg,var(--green),#22C55E)}
+.zip-steps{display:flex;flex-direction:column;gap:5px}
+.zip-step{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text3)}
+.zip-step.active{color:var(--green);font-weight:600}
+.zip-step.done{color:var(--green)}
+.zip-step .zs-icon{width:16px;height:16px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
+.zip-step.active .zs-icon{background:var(--green);color:#fff;animation:spin 1s linear infinite}
+.zip-step.done .zs-icon{background:var(--green);color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+.zip-done-badge{display:none;align-items:center;gap:8px;margin-top:12px;padding:10px 14px;background:var(--green);border-radius:var(--r-sm);color:#fff;font-size:13px;font-weight:600}
+.zip-done-badge.show{display:flex}
+
 /* ── REDO TAB ── */
 .redo-list{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto}
 .redo-row{
@@ -331,7 +353,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v7.1</div>
+  <div class="badge">v7.2</div>
 </div>
 
 <!-- STEPS -->
@@ -618,9 +640,30 @@ tbody tr:hover td{background:var(--surface2)}
         </div>
         <div class="match-list" id="matchList"></div>
         <div class="alert" id="matchAlert" style="margin-top:12px"></div>
-        <button class="btn btn-green btn-full" style="margin-top:16px" onclick="buildZip()">
+        <button class="btn btn-green btn-full" style="margin-top:16px" id="buildZipBtn" onclick="buildZip()">
           🔥 Build &amp; Download ZIP Package
         </button>
+
+        <!-- ZIP Progress -->
+        <div class="zip-progress-wrap" id="zipProgressWrap">
+          <div class="zip-progress-title">
+            <span id="zipProgressIcon">⚙️</span>
+            <span id="zipProgressTitle">Building your ZIP package...</span>
+          </div>
+          <div class="zip-progress-track">
+            <div class="zip-progress-fill" id="zipProgressFill"></div>
+          </div>
+          <div class="zip-steps">
+            <div class="zip-step" id="zstep1"><div class="zs-icon">→</div> Preparing menu Excel file</div>
+            <div class="zip-step" id="zstep2"><div class="zs-icon">→</div> Adding prompt files</div>
+            <div class="zip-step" id="zstep3"><div class="zs-icon">→</div> <span id="zstep3label">Reading and renaming images (0 / 0)</span></div>
+            <div class="zip-step" id="zstep4"><div class="zs-icon">→</div> Compressing ZIP file</div>
+            <div class="zip-step" id="zstep5"><div class="zs-icon">→</div> Starting download</div>
+          </div>
+          <div class="zip-done-badge" id="zipDoneBadge">
+            ✅ ZIP downloaded successfully! Check your Downloads folder.
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1354,34 +1397,133 @@ function onExcelUpload(input){
 }
 
 // ══ BUILD ZIP ══
-async function buildZip(){
-  const zip=new JSZip();const name=getRestName();const folder=zip.folder(name+'_Glovo_Package');
-  const wsData=[['Category','Item','Description','Price']];
-  menuItems.forEach(it=>wsData.push([it.category,it.item,it.description,it.price]));
-  const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols']=[{wch:24},{wch:34},{wch:58},{wch:12}];
-  XLSX.utils.book_append_sheet(wb,ws,'Menu Data');
-  folder.file(name+'_Glovo_Menu.xlsx',XLSX.write(wb,{bookType:'xlsx',type:'array'}));
-  // Save all prompts split by batch
-  const batchSz=parseInt($('batchSize')?.value||'30');
-  const numB=Math.ceil(allPrompts.length/batchSz);
-  for(let b=0;b<numB;b++){
-    const s=b*batchSz;const e=Math.min((b+1)*batchSz,allPrompts.length);
-    const bPrompts=allPrompts.slice(s,e);
-    const lbl=numB===1?'All_Prompts':('Day'+(b+1)+'_of_'+numB+'_Prompts');
-    const txt=bPrompts.map((p,i)=>`${s+i+1}. ${p.name}\n${p.prompt}`).join('\n\n---\n\n');
-    folder.file(name+'_'+lbl+'.txt',txt);
+// ── ZIP progress helpers ──
+function zipStep(n, pct, label){
+  // Update all steps styling
+  for(let i=1;i<=5;i++){
+    const el=$('zstep'+i);
+    if(!el) continue;
+    el.classList.remove('active','done');
+    const icon=el.querySelector('.zs-icon');
+    if(i<n){el.classList.add('done');if(icon)icon.textContent='✓';}
+    else if(i===n){el.classList.add('active');if(icon)icon.textContent='↻';}
+    else{if(icon)icon.textContent='→';}
   }
-  const imgFolder=folder.folder('images');
-  await Promise.all(matchedImages.filter(m=>m.file).map(m=>new Promise(resolve=>{
-    const r=new FileReader();
-    r.onload=e=>{
-      imgFolder.file(m.extra?slugify(m.key)+'.'+m.file.name.split('.').pop():slugify(m.key)+'.jpeg',e.target.result.split(',')[1],{base64:true});
-      resolve();
-    };r.readAsDataURL(m.file);
-  })));
-  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name+'_Glovo_Package.zip';a.click();
+  $('zipProgressFill').style.width=pct+'%';
+  if(label&&$('zstep'+n)){
+    const span=$('zstep'+n).querySelector('span')||$('zstep'+n).childNodes[1];
+  }
+}
+
+async function buildZip(){
+  const imgFiles=matchedImages.filter(m=>m.file);
+  const totalImgs=imgFiles.length;
+
+  // Show progress UI, disable button
+  const btn=$('buildZipBtn');
+  btn.disabled=true;btn.textContent='⏳ Building...';
+  const wrap=$('zipProgressWrap');
+  wrap.classList.add('active');
+  $('zipDoneBadge').classList.remove('show');
+  $('zipProgressTitle').textContent='Building your ZIP package...';
+  $('zipProgressIcon').textContent='⚙️';
+
+  // Small delay so UI renders before heavy work
+  await new Promise(r=>setTimeout(r,50));
+
+  try{
+    const zip=new JSZip();
+    const name=getRestName();
+    const folder=zip.folder(name+'_Glovo_Package');
+
+    // Step 1 — Excel
+    zipStep(1,10,'');
+    await new Promise(r=>setTimeout(r,30));
+    const wsData=[['Category','Item','Description','Price']];
+    menuItems.forEach(it=>wsData.push([it.category,it.item,it.description,it.price]));
+    const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols']=[{wch:24},{wch:34},{wch:58},{wch:12}];
+    XLSX.utils.book_append_sheet(wb,ws,'Menu Data');
+    folder.file(name+'_Glovo_Menu.xlsx',XLSX.write(wb,{bookType:'xlsx',type:'array'}));
+    zipStep(1,20,'');
+
+    // Step 2 — Prompts
+    zipStep(2,25,'');
+    await new Promise(r=>setTimeout(r,30));
+    const batchSz=parseInt($('batchSize')?.value||'30');
+    const numB=Math.ceil(allPrompts.length/batchSz);
+    for(let b=0;b<numB;b++){
+      const s=b*batchSz;const e=Math.min((b+1)*batchSz,allPrompts.length);
+      const lbl=numB===1?'All_Prompts':('Day'+(b+1)+'_of_'+numB+'_Prompts');
+      const txt=allPrompts.slice(s,e).map((p,i)=>`${s+i+1}. ${p.name}\n${p.prompt}`).join('\n\n---\n\n');
+      folder.file(name+'_'+lbl+'.txt',txt);
+    }
+    zipStep(2,35,'');
+
+    // Step 3 — Images (with per-image progress)
+    zipStep(3,35,'');
+    const imgFolder=folder.folder('images');
+    let done=0;
+    // Process images in chunks of 10 to keep UI responsive
+    const chunkSize=10;
+    for(let i=0;i<imgFiles.length;i+=chunkSize){
+      const chunk=imgFiles.slice(i,Math.min(i+chunkSize,imgFiles.length));
+      await Promise.all(chunk.map(m=>new Promise(resolve=>{
+        const r=new FileReader();
+        r.onload=e=>{
+          const ext=m.file.name.split('.').pop().toLowerCase();
+          const fname=m.extra?slugify(m.key)+'.'+ext:slugify(m.key)+'.jpeg';
+          imgFolder.file(fname,e.target.result.split(',')[1],{base64:true});
+          done++;
+          const pct=35+Math.round((done/totalImgs)*40);
+          $('zipProgressFill').style.width=pct+'%';
+          if($('zstep3label')) $('zstep3label').textContent=`Reading and renaming images (${done} / ${totalImgs})`;
+          resolve();
+        };r.readAsDataURL(m.file);
+      })));
+      // Yield to UI between chunks
+      await new Promise(r=>setTimeout(r,10));
+    }
+    zipStep(3,75,'');
+
+    // Step 4 — Compress
+    zipStep(4,78,'');
+    $('zipProgressTitle').textContent='Compressing files...';
+    await new Promise(r=>setTimeout(r,30));
+    const blob=await zip.generateAsync(
+      {type:'blob',compression:'DEFLATE',compressionOptions:{level:6}},
+      meta=>{
+        const pct=78+Math.round(meta.percent*0.17);
+        $('zipProgressFill').style.width=Math.min(pct,95)+'%';
+      }
+    );
+    zipStep(4,95,'');
+
+    // Step 5 — Download
+    zipStep(5,98,'');
+    $('zipProgressTitle').textContent='Starting download...';
+    await new Promise(r=>setTimeout(r,100));
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=name+'_Glovo_Package.zip';
+    a.click();
+
+    // Done!
+    zipStep(5,100,'');
+    $('zipProgressFill').style.width='100%';
+    $('zipProgressTitle').textContent='✅ ZIP package ready!';
+    $('zipProgressIcon').textContent='✅';
+    $('zipDoneBadge').classList.add('show');
+    btn.disabled=false;
+    btn.textContent='🔥 Build & Download ZIP Package';
+
+  } catch(err){
+    wrap.classList.remove('active');
+    btn.disabled=false;
+    btn.textContent='🔥 Build & Download ZIP Package';
+    alert('ZIP build failed: '+err.message);
+    console.error(err);
+  }
 }
 </script>
 </body>
