@@ -243,7 +243,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v5.0</div>
+  <div class="badge">v6.0</div>
 </div>
 
 <!-- STEPS -->
@@ -408,8 +408,8 @@ tbody tr:hover td{background:var(--surface2)}
       <!-- Individual prompts -->
       <div class="prompts-box" id="promptsBox"></div>
 
-      <div class="alert alert-info mt12">
-        💡 Each prompt has a different background (terracotta, slate, navy, copper...) so images look varied. Pizza sizes share one prompt — Glovo handles sizes via attributes.
+      <div class="alert alert-success mt12">
+        ✅ <strong>Glovo Official Specs applied to every prompt:</strong> Min 540×540px · Square 1:1 · No text/logos/watermarks · No hands/body parts · Food centered and fully visible · Clean monochromatic background · Natural lighting · No gradients · Strictly food only (prevents Flow AI from generating vehicles or unrelated objects)
       </div>
     </div>
 
@@ -499,8 +499,43 @@ function setPill(n,state){const el=$('pill'+n);el.classList.remove('active','don
 function norm(s){return s.toLowerCase().replace(/[^a-z0-9]/g,'')}
 function slugify(s){return s.trim().replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ')}
 
-function buildPrompt(key,desc,bg){
-  return `A large, freshly prepared ${key}, featuring ${desc}. The dish is presented whole, perfectly centered, and fully visible in the frame from a clear top-down appetizing angle. It is resting cleanly on a flat ${bg} with a subtle texture. The background is simple, neutral, and clean. Bright, soft natural daylight illuminates the dish from the side, making the ingredients look realistic, fresh, and delicious. Sharp focus, high-resolution food photography. Square 1:1 format, 540x540 pixels. No hands, no cutlery, no boxes, no text, no logos.`;
+function buildPrompt(key,desc,bg,category){
+  category = (category||'').toLowerCase();
+  let subject, extra;
+
+  if(category.includes('beverage')||/tea|coffee|latte|mocha|espresso|chocolate|cappuccino|americano|milk/i.test(key)){
+    subject = `a hot ${key} drink served in a clean ceramic cup or glass`;
+    extra = 'The drink is the ONLY subject. No food, no vehicles, no unrelated objects.';
+  } else if(/platter/i.test(key)){
+    subject = `a large mixed food platter of ${key} with grilled meats and sides clearly arranged`;
+    extra = 'Show all food components. FOOD only as the subject.';
+  } else if(/burger|sandwich/i.test(key)){
+    subject = `a freshly assembled ${key}, slightly open to clearly show all layers and filling inside`;
+    extra = 'Show all burger or sandwich layers clearly. FOOD only.';
+  } else if(/samosa|pastry/i.test(key)){
+    subject = `golden crispy ${key}, one broken open to reveal the filling inside`;
+    extra = 'Show crispy exterior and visible filling. FOOD only.';
+  } else if(/breakfast|omelette|eggs|toast/i.test(key)){
+    subject = `a freshly plated ${key} with all ingredients clearly visible on the plate`;
+    extra = 'All breakfast components shown clearly. FOOD only as subject.';
+  } else {
+    subject = `a freshly prepared ${key} featuring ${desc}`;
+    extra = 'The food dish is the ONLY subject in the image.';
+  }
+
+  return [
+    `Professional food delivery photograph of ${subject}.`,
+    `${desc}.`,
+    `The dish is perfectly centered and FULLY visible within the frame — not cropped.`,
+    `Shot from a clear top-down 90-degree overhead angle showing all ingredients.`,
+    `Placed cleanly on a flat ${bg} with subtle texture.`,
+    `Background is simple, clean and monochromatic — no gradients, no transparent backgrounds.`,
+    `Bright soft natural daylight from the side, no flash, making ingredients look realistic, fresh and appetizing.`,
+    `Sharp focus, high resolution. Square 1:1 format, minimum 540x540 pixels, maximum 4000x4000 pixels.`,
+    `Absolutely NO hands, NO body parts, NO text, NO watermarks, NO logos, NO collages, NO vehicles, NO unrelated props.`,
+    extra,
+    `This is strictly a professional food photograph — the subject must be the food or drink item ONLY.`
+  ].join(' ');
 }
 
 // ══ NAV ══
@@ -566,7 +601,7 @@ async function runParse(){
     const seen={};uniqueItems=[];
     menuItems.forEach(it=>{if(!seen[it.imageKey]){seen[it.imageKey]=true;uniqueItems.push(it);}});
     // Build prompts array
-    allPrompts=uniqueItems.map((it,i)=>({name:it.imageKey,desc:it.description,bg:BG[i%BG.length],prompt:buildPrompt(it.imageKey,it.description,BG[i%BG.length])}));
+    allPrompts=uniqueItems.map((it,i)=>({name:it.imageKey,desc:it.description,bg:BG[i%BG.length],category:it.category,prompt:buildPrompt(it.imageKey,it.description,BG[i%BG.length],it.category)}));
     setProgress(90,'Building outputs...');
     renderAll();
     setProgress(100,'Done! ✓');
@@ -638,7 +673,7 @@ function renderBatches(){
       <div class="prompt-num">${globalIdx+1}</div>
       <div class="prompt-body">
         <div class="prompt-name">${p.name}<span class="prompt-bg-badge">${p.bg}</span></div>
-        <div class="prompt-text">${p.prompt}</div>
+        <div class="prompt-text" style="font-size:10px;color:var(--text2);line-height:1.7;font-family:'DM Mono',monospace;word-break:break-word">${p.prompt.substring(0,250)}...</div>
       </div>
       <button class="copy-one-btn" id="copyBtn${globalIdx}" onclick="copyOne(${globalIdx})">Copy</button>
     </div>`;
