@@ -243,7 +243,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v6.2</div>
+  <div class="badge">v6.3</div>
 </div>
 
 <!-- STEPS -->
@@ -825,43 +825,109 @@ function renderExpected(){
 }
 
 // ══ IMAGE MATCHING ══
+// Matching mode: 'sequence' (TurboFlow order-based) or 'name' (filename-based)
+let matchMode='sequence';
+
 function onImgFiles(input){
   const files=Array.from(input.files);if(!files.length)return;
-  matchedImages=[];const usedFiles=new Set();
-  uniqueItems.forEach(it=>{
-    const nk=norm(it.imageKey);let best=null,bestScore=-1;
-    files.forEach(f=>{
-      const nf=norm(f.name.replace(/\.[^.]+$/,''));let score=0;
-      if(nf===nk)score=100;
-      else if(nf.includes(nk)||nk.includes(nf))score=60;
-      else{const kT=nk.match(/[a-z0-9]+/g)||[];const fT=nf.match(/[a-z0-9]+/g)||[];score=kT.filter(t=>fT.includes(t)).length*10;}
-      if(score>bestScore){bestScore=score;best=f;}
-    });
-    const matched=bestScore>=10;if(matched)usedFiles.add(best.name);
-    matchedImages.push({key:it.imageKey,file:matched?best:null,matched});
+  // Sort files — TurboFlow names them with numbers, sort numerically
+  files.sort((a,b)=>{
+    const na=a.name.replace(/[^0-9]/g,'');
+    const nb=b.name.replace(/[^0-9]/g,'');
+    if(na&&nb) return parseInt(na)-parseInt(nb);
+    return a.name.localeCompare(b.name);
   });
-  files.forEach(f=>{if(!usedFiles.has(f.name))matchedImages.push({key:f.name.replace(/\.[^.]+$/,''),file:f,matched:false,extra:true});});
-  renderMatchResults();$('matchSection').classList.remove('hidden');
+  doMatch(files);
+  renderMatchResults();
+  $('matchSection').classList.remove('hidden');
+}
+
+function doMatch(files){
+  matchedImages=[];
+  if(matchMode==='sequence'){
+    // Order-based: image 1 → menu item 1, image 2 → menu item 2, etc.
+    uniqueItems.forEach((it,i)=>{
+      const f=files[i]||null;
+      matchedImages.push({key:it.imageKey,file:f,matched:!!f,mode:'seq'});
+    });
+    // Any extra files beyond menu count
+    if(files.length>uniqueItems.length){
+      files.slice(uniqueItems.length).forEach(f=>{
+        matchedImages.push({key:f.name.replace(/\.[^.]+$/,''),file:f,matched:false,extra:true});
+      });
+    }
+  } else {
+    // Name-based fallback
+    const usedFiles=new Set();
+    uniqueItems.forEach(it=>{
+      const nk=norm(it.imageKey);let best=null,bestScore=-1;
+      files.forEach(f=>{
+        const nf=norm(f.name.replace(/\.[^.]+$/,''));let score=0;
+        if(nf===nk)score=100;
+        else if(nf.includes(nk)||nk.includes(nf))score=60;
+        else{const kT=nk.match(/[a-z0-9]+/g)||[];const fT=nf.match(/[a-z0-9]+/g)||[];score=kT.filter(t=>fT.includes(t)).length*10;}
+        if(score>bestScore){bestScore=score;best=f;}
+      });
+      const matched=bestScore>=10;if(matched)usedFiles.add(best.name);
+      matchedImages.push({key:it.imageKey,file:matched?best:null,matched});
+    });
+    files.forEach(f=>{if(!usedFiles.has(f.name))matchedImages.push({key:f.name.replace(/\.[^.]+$/,''),file:f,matched:false,extra:true});});
+  }
 }
 
 function renderMatchResults(){
-  const ok=matchedImages.filter(m=>m.matched).length;const total=uniqueItems.length;const miss=total-ok;
-  $('matchList').innerHTML=matchedImages.map(m=>`
-    <div class="match-row ${m.matched||m.extra?'ok':'miss'}">
-      <div class="dot ${m.matched||m.extra?'dot-ok':'dot-miss'}"></div>
-      <div class="match-name">${m.extra?m.key:m.key+'.jpeg'}</div>
-      <div class="match-src">${m.matched?'← '+m.file.name:m.extra?'included as-is':'no match — will skip'}</div>
+  const ok=matchedImages.filter(m=>m.matched&&!m.extra).length;
+  const total=uniqueItems.length;const miss=total-ok;
+
+  // Mode toggle UI
+  const modeHtml=`<div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:11px;color:var(--text2);font-weight:600">Match mode:</span>
+    <button onclick="switchMatchMode('sequence')" style="padding:5px 12px;border-radius:6px;border:1.5px solid ${matchMode==='sequence'?'var(--orange)':'var(--border)'};background:${matchMode==='sequence'?'var(--orange-pale)':'var(--surface)'};font-size:11px;font-weight:600;cursor:pointer;color:${matchMode==='sequence'?'var(--orange)':'var(--text3)'}">
+      📋 By Order (TurboFlow)
+    </button>
+    <button onclick="switchMatchMode('name')" style="padding:5px 12px;border-radius:6px;border:1.5px solid ${matchMode==='name'?'var(--orange)':'var(--border)'};background:${matchMode==='name'?'var(--orange-pale)':'var(--surface)'};font-size:11px;font-weight:600;cursor:pointer;color:${matchMode==='name'?'var(--orange)':'var(--text3)'}">
+      🔤 By Filename
+    </button>
+    <span style="font-size:10px;color:var(--text3)">${matchMode==='sequence'?'Images assigned in the order they were generated — works with TurboFlow numbering':'Images matched by filename similarity'}</span>
+  </div>`;
+
+  $('matchList').innerHTML=modeHtml+matchedImages.filter(m=>!m.extra).map((m,i)=>`
+    <div class="match-row ${m.matched?'ok':'miss'}">
+      <div class="dot ${m.matched?'dot-ok':'dot-miss'}"></div>
+      <div style="width:24px;font-size:10px;color:var(--text3);flex-shrink:0;text-align:center">${i+1}</div>
+      <div class="match-name">${m.key}.jpeg</div>
+      <div class="match-src">${m.matched?'← '+m.file.name:'no image — will skip'}</div>
     </div>`).join('');
+
   const al=$('matchAlert');
-  if(miss===0){al.className='alert alert-success';al.textContent=`✅ All ${ok} images matched and will be renamed correctly.`;}
-  else{al.className='alert alert-warn';al.textContent=`⚠ ${ok} of ${total} images matched. ${miss} item(s) will be skipped — re-run those in Flow AI.`;}
-  $('expectedList').innerHTML=uniqueItems.map(it=>{
-    const m=matchedImages.find(x=>x.key===it.imageKey);
+  if(miss===0){al.className='alert alert-success';al.textContent=`✅ All ${ok} images matched in order and will be renamed correctly.`;}
+  else if(ok>0){al.className='alert alert-warn';al.textContent=`⚠ ${ok} of ${total} images matched. You uploaded ${matchedImages.filter(m=>m.file&&!m.extra).length} images for ${total} menu items. Upload all ${total} images at once.`;}
+  else{al.className='alert alert-error';al.textContent=`❌ No images matched. Make sure you select ALL downloaded images at once and try again.`;}
+
+  $('expectedList').innerHTML=uniqueItems.map((it,i)=>{
+    const m=matchedImages[i];
     return `<div class="match-row ${m?.matched?'ok':''}">
       <div class="dot ${m?.matched?'dot-ok':'dot-wait'}"></div>
+      <div style="width:20px;font-size:10px;color:var(--text3);text-align:center">${i+1}</div>
       <div class="match-name">${it.imageKey}.jpeg</div>
       <div class="match-src">${m?.matched?'✓ '+m.file.name:'not yet uploaded'}</div>
     </div>`;}).join('');
+}
+
+function switchMatchMode(mode){
+  matchMode=mode;
+  // Re-run matching with current files
+  const input=$('imgFiles');
+  if(input.files&&input.files.length>0){
+    const files=Array.from(input.files);
+    files.sort((a,b)=>{
+      const na=a.name.replace(/[^0-9]/g,'');const nb=b.name.replace(/[^0-9]/g,'');
+      if(na&&nb)return parseInt(na)-parseInt(nb);
+      return a.name.localeCompare(b.name);
+    });
+    doMatch(files);
+    renderMatchResults();
+  }
 }
 
 // ══ BUILD ZIP ══
