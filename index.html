@@ -234,6 +234,51 @@ tbody tr:hover td{background:var(--surface2)}
 
 .hidden{display:none!important}
 .mt12{margin-top:12px}.mt16{margin-top:16px}
+
+/* ── PROJECTS ── */
+.projects-bar{
+  background:linear-gradient(135deg,var(--blue-pale),#EFF6FF);
+  border:1px solid rgba(37,99,235,0.2);border-radius:var(--r);
+  padding:16px 20px;margin-bottom:20px;
+}
+.projects-bar-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.projects-bar h3{font-family:'Playfair Display',serif;font-size:15px;font-weight:700;color:#1E3A8A;flex:1}
+.projects-list{display:flex;gap:8px;flex-wrap:wrap}
+.project-chip{
+  padding:6px 14px;border-radius:20px;
+  border:1.5px solid rgba(37,99,235,0.3);
+  background:var(--surface);font-size:12px;font-weight:600;
+  cursor:pointer;transition:.15s;color:#1E40AF;
+  display:flex;align-items:center;gap:6px;
+}
+.project-chip:hover{background:var(--blue-pale);border-color:var(--blue)}
+.project-chip.active-proj{background:var(--blue);color:#fff;border-color:var(--blue)}
+.project-chip .proj-del{
+  font-size:10px;opacity:.6;cursor:pointer;
+  background:rgba(255,255,255,0.3);border-radius:50%;
+  width:14px;height:14px;display:flex;align-items:center;justify-content:center;
+}
+.project-chip .proj-del:hover{opacity:1;background:rgba(255,0,0,0.2)}
+.no-projects{font-size:12px;color:#93C5FD;font-style:italic}
+.proj-saved-badge{
+  font-size:10px;color:var(--green);font-weight:600;
+  padding:3px 8px;background:var(--green-pale);
+  border-radius:10px;border:1px solid rgba(26,158,92,0.2);
+  opacity:0;transition:opacity .4s;
+}
+.proj-saved-badge.show{opacity:1}
+
+/* Excel upload in step 3 */
+.excel-upload-zone{
+  border:2px dashed rgba(37,99,235,0.3);border-radius:var(--r-sm);
+  padding:20px;text-align:center;cursor:pointer;
+  position:relative;transition:.2s;background:var(--blue-pale);
+  margin-bottom:14px;
+}
+.excel-upload-zone:hover{border-color:var(--blue);background:#DBEAFE}
+.excel-upload-zone.has-excel{border-color:var(--green);border-style:solid;background:var(--green-pale)}
+.excel-upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.excel-status{font-size:12px;color:var(--green);font-weight:600;margin-top:6px}
 </style>
 </head>
 <body>
@@ -246,7 +291,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v6.4</div>
+  <div class="badge">v7.0</div>
 </div>
 
 <!-- STEPS -->
@@ -254,6 +299,18 @@ tbody tr:hover td{background:var(--surface2)}
   <div class="step-item active" id="pill1" onclick="jumpTo(1)" style="cursor:pointer" title="Go to Step 1"><div class="step-num">1</div><div class="step-label">Upload &amp; Parse</div></div>
   <div class="step-item" id="pill2" onclick="jumpTo(2)" style="cursor:pointer" title="Go to Step 2"><div class="step-num">2</div><div class="step-label">Review &amp; Copy Prompts</div></div>
   <div class="step-item" id="pill3" onclick="jumpTo(3)" style="cursor:pointer" title="Go to Step 3 — Upload Images &amp; ZIP"><div class="step-num">3</div><div class="step-label">Download &amp; ZIP</div></div>
+</div>
+
+<!-- PROJECTS BAR -->
+<div class="projects-bar">
+  <div class="projects-bar-header">
+    <div style="font-size:20px">📁</div>
+    <h3>My Restaurant Projects</h3>
+    <span class="proj-saved-badge" id="projSavedBadge">✓ Saved</span>
+  </div>
+  <div id="projectsList" class="projects-list">
+    <span class="no-projects">No projects yet — parse a menu to create your first project</span>
+  </div>
 </div>
 
 <!-- QUICK ACCESS BAR -->
@@ -719,7 +776,11 @@ async function runParse(){
     setProgress(90,'Building outputs...');
     renderAll();
     setProgress(100,'Done! ✓');
-    setTimeout(()=>{$('progWrap').classList.add('hidden');$('s2body').classList.remove('hidden');},400);
+    setTimeout(()=>{
+      $('progWrap').classList.add('hidden');
+      $('s2body').classList.remove('hidden');
+      saveCurrentProject(); // Auto-save to projects
+    },400);
   }catch(e){
     $('progLabel').textContent='❌ Error: '+e.message;
     $('progLabel').style.color='#DC2626';
@@ -867,6 +928,11 @@ function renderExpected(){
     </div>`).join('');
 }
 
+// ══ INIT ══
+document.addEventListener('DOMContentLoaded',()=>{
+  renderProjectsList();
+});
+
 // ══ IMAGE MATCHING ══
 // Matching mode: 'sequence' (TurboFlow order-based) or 'name' (filename-based)
 let matchMode='sequence';
@@ -971,6 +1037,130 @@ function switchMatchMode(mode){
     doMatch(files);
     renderMatchResults();
   }
+}
+
+// ══ PROJECTS (localStorage) ══
+const PROJ_KEY='glovoPipelineProjects';
+
+function loadProjects(){
+  try{ return JSON.parse(localStorage.getItem(PROJ_KEY)||'{}'); }
+  catch(e){ return {}; }
+}
+function saveProjects(p){
+  try{ localStorage.setItem(PROJ_KEY,JSON.stringify(p)); }
+  catch(e){ console.warn('localStorage full',e); }
+}
+function saveCurrentProject(){
+  if(!menuItems.length) return;
+  const name=$('restName').value.trim()||'Unnamed Restaurant';
+  const projects=loadProjects();
+  projects[name]={
+    name,
+    currency:$('currency').value,
+    menuItems,
+    uniqueItems,
+    allPrompts,
+    savedAt:new Date().toISOString()
+  };
+  saveProjects(projects);
+  renderProjectsList();
+  // Flash saved badge
+  const b=$('projSavedBadge');b.classList.add('show');
+  setTimeout(()=>b.classList.remove('show'),2000);
+}
+function loadProject(name){
+  const projects=loadProjects();
+  const p=projects[name];
+  if(!p) return;
+  menuItems=p.menuItems||[];
+  uniqueItems=p.uniqueItems||[];
+  allPrompts=p.allPrompts||[];
+  $('restName').value=p.name||'';
+  if(p.currency) $('currency').value=p.currency;
+  // Update active project label
+  const d=new Date(p.savedAt);
+  const dateStr=d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  $('activeProjectLabel').className='alert alert-success';
+  $('activeProjectLabel').innerHTML=`✅ <strong>${p.name}</strong> loaded — ${menuItems.length} items, saved ${dateStr}. Images will be renamed to match this menu.`;
+  // Update expected list if on step 3
+  if(!$('s3').classList.contains('hidden')) renderExpected();
+  // Mark active
+  document.querySelectorAll('.project-chip').forEach(c=>c.classList.remove('active-proj'));
+  const chip=document.getElementById('proj_'+name.replace(/[^a-z0-9]/gi,'_'));
+  if(chip) chip.classList.add('active-proj');
+}
+function deleteProject(name,e){
+  e.stopPropagation();
+  if(!confirm(`Delete project "${name}"?`)) return;
+  const projects=loadProjects();
+  delete projects[name];
+  saveProjects(projects);
+  renderProjectsList();
+}
+function renderProjectsList(){
+  const projects=loadProjects();
+  const keys=Object.keys(projects);
+  const el=$('projectsList');
+  if(!keys.length){
+    el.innerHTML='<span class="no-projects">No projects yet — parse a menu to create your first project</span>';
+    return;
+  }
+  el.innerHTML=keys.map(name=>{
+    const p=projects[name];
+    const d=new Date(p.savedAt);
+    const dateStr=d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    const safeId='proj_'+name.replace(/[^a-z0-9]/gi,'_');
+    return `<div class="project-chip" id="${safeId}" onclick="loadProject('${name.replace(/'/g,"\'")}')" title="Last saved ${dateStr} · ${(p.menuItems||[]).length} items">
+      <span>🏪 ${name}</span>
+      <span style="font-size:10px;opacity:.6">${(p.menuItems||[]).length} items</span>
+      <span class="proj-del" onclick="deleteProject('${name.replace(/'/g,"\'")}',event)" title="Delete project">✕</span>
+    </div>`;
+  }).join('');
+}
+
+// ══ EXCEL UPLOAD IN STEP 3 ══
+function onExcelUpload(input){
+  const f=input.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1});
+      // Skip header row, build menu items
+      const loaded=[];
+      rows.slice(1).forEach(row=>{
+        if(row[1]){ // Item name must exist
+          loaded.push({
+            category:row[0]||'',
+            item:row[1]||'',
+            description:row[2]||'',
+            price:row[3]||'',
+            imageKey:row[1]||''
+          });
+        }
+      });
+      if(!loaded.length){ alert('No menu items found in Excel. Check the file format.'); return; }
+      menuItems=loaded;
+      // Deduplicate by imageKey
+      const seen={};uniqueItems=[];
+      menuItems.forEach(it=>{if(!seen[it.imageKey]){seen[it.imageKey]=true;uniqueItems.push(it);}});
+      // Update UI
+      $('excelDrop').classList.add('has-excel');
+      $('excelStatus').textContent=`✓ ${loaded.length} items loaded from ${f.name}`;
+      $('excelStatus').classList.remove('hidden');
+      $('activeProjectLabel').className='alert alert-success';
+      $('activeProjectLabel').innerHTML=`✅ Menu loaded from <strong>${f.name}</strong> — ${loaded.length} items ready for renaming.`;
+      renderExpected();
+      // Also rebuild allPrompts if empty
+      if(!allPrompts.length){
+        allPrompts=uniqueItems.map((it,i)=>({name:it.imageKey,desc:it.description,bg:BG[i%BG.length],category:it.category,prompt:buildPrompt(it.imageKey,it.description,BG[i%BG.length],it.category)}));
+      }
+    } catch(err){
+      alert('Could not read Excel: '+err.message);
+    }
+  };
+  reader.readAsArrayBuffer(f);
 }
 
 // ══ BUILD ZIP ══
