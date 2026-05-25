@@ -243,7 +243,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v6.0</div>
+  <div class="badge">v6.1</div>
 </div>
 
 <!-- STEPS -->
@@ -312,7 +312,10 @@ tbody tr:hover td{background:var(--surface2)}
       <div class="drop-sub">PDF, PNG, JPG or TXT accepted</div>
       <div class="drop-file hidden" id="menuFileName"></div>
     </div>
-    <div class="or-line">or paste menu text directly</div>
+    <div class="alert alert-info" style="font-size:11px;margin-top:10px;padding:10px 14px;line-height:1.7">
+        📎 <strong>Supported:</strong> PDF, PNG, JPG up to <strong>28MB</strong>. For large PDFs compress first at <a href="https://www.ilovepdf.com/compress_pdf" target="_blank" style="color:var(--blue);font-weight:600">ilovepdf.com</a> — or paste menu text directly below.
+      </div>
+      <div class="or-line">or paste menu text directly</div>
     <div class="field-group">
       <label class="field-label">Menu Text</label>
       <textarea class="text-input" id="menuText" placeholder="Paste raw menu text here...&#10;&#10;BURGERS&#10;Classic Beef Burger — Ksh 600&#10;  Beef patty, lettuce, tomato, mayo&#10;..."></textarea>
@@ -548,11 +551,41 @@ function showTab(e,id){document.querySelectorAll('.tab').forEach(t=>t.classList.
 // ══ FILE UPLOAD ══
 function onMenuFile(input){
   const f=input.files[0];if(!f)return;
-  $('menuFileName').textContent='✓ '+f.name;$('menuFileName').classList.remove('hidden');$('menuDrop').classList.add('has-file');
+  const sizeMB=(f.size/(1024*1024)).toFixed(1);
+  const fn=$('menuFileName');
+  fn.classList.remove('hidden');
+  $('menuDrop').classList.add('has-file');
+
   const r=new FileReader();
-  if(f.type==='application/pdf'){r.readAsArrayBuffer(f);r.onload=e=>uploadedFileData={type:'pdf',data:e.target.result};}
-  else if(f.type.startsWith('image/')){r.readAsDataURL(f);r.onload=e=>uploadedFileData={type:'image',data:e.target.result};}
-  else{r.readAsText(f);r.onload=e=>{$('menuText').value=e.target.result;uploadedFileData=null;}}
+  if(f.type==='application/pdf'){
+    // Warn if very large
+    if(f.size>28*1024*1024){
+      fn.textContent=`⚠ ${f.name} (${sizeMB}MB) — exceeds 28MB limit. Compress at smallpdf.com first.`;
+      fn.style.color='#E8430A';
+      $('menuDrop').classList.remove('has-file');
+      return;
+    }
+    fn.textContent=`Loading ${f.name} (${sizeMB}MB)...`;
+    fn.style.color='#F5A623';
+    r.readAsArrayBuffer(f);
+    r.onprogress=e=>{
+      if(e.lengthComputable){
+        const pct=Math.round(e.loaded/e.total*100);
+        fn.textContent=`Loading PDF... ${pct}% (${sizeMB}MB)`;
+      }
+    };
+    r.onload=e=>{
+      uploadedFileData={type:'pdf',data:e.target.result};
+      fn.textContent=`✓ ${f.name} (${sizeMB}MB) — ready`;
+      fn.style.color='';
+    };
+  }else if(f.type.startsWith('image/')){
+    fn.textContent=`✓ ${f.name} (${sizeMB}MB)`;fn.style.color='';
+    r.readAsDataURL(f);r.onload=e=>uploadedFileData={type:'image',data:e.target.result};
+  }else{
+    fn.textContent=`✓ ${f.name}`;fn.style.color='';
+    r.readAsText(f);r.onload=e=>{$('menuText').value=e.target.result;uploadedFileData=null;}
+  }
 }
 const menuDrop=$('menuDrop');
 menuDrop.addEventListener('dragover',e=>{e.preventDefault();menuDrop.classList.add('dragover')});
@@ -576,8 +609,20 @@ async function runParse(){
         const b64=uploadedFileData.data.split(',')[1];const mime=uploadedFileData.data.split(';')[0].split(':')[1];
         content.push({type:'image',source:{type:'base64',media_type:mime,data:b64}});
       }else if(uploadedFileData.type==='pdf'){
-        const uint=new Uint8Array(uploadedFileData.data);let bin='';uint.forEach(b=>bin+=String.fromCharCode(b));
-        content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:btoa(bin)}});
+        // Chunked base64 encoding — handles large PDFs without stack overflow
+        const uint=new Uint8Array(uploadedFileData.data);
+        let bin='';
+        const chunkSize=8192;
+        for(let i=0;i<uint.length;i+=chunkSize){
+          bin+=String.fromCharCode.apply(null,uint.subarray(i,Math.min(i+chunkSize,uint.length)));
+        }
+        const encoded=btoa(bin);
+        const sizeMB=(uint.length/(1024*1024)).toFixed(1);
+        if(uint.length>28*1024*1024){
+          throw new Error(`PDF too large (${sizeMB}MB). Please compress it at smallpdf.com or ilovepdf.com to under 25MB, or paste the menu text directly in the text box.`);
+        }
+        setProgress(15,`PDF ready (${sizeMB}MB) — sending to Claude...`);
+        content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:encoded}});
       }
     }
     content.push({type:'text',text:uploadedFileData?'Extract all menu items from this menu.':'Extract all menu items:\n\n'+text});
