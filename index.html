@@ -280,6 +280,63 @@ tbody tr:hover td{background:var(--surface2)}
 .excel-upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .excel-status{font-size:12px;color:var(--green);font-weight:600;margin-top:6px}
 
+/* ── VISUAL MATCH ── */
+.vmatch-grid{display:flex;flex-direction:column;gap:6px;max-height:520px;overflow-y:auto}
+.vmatch-row{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 12px;background:var(--surface2);
+  border-radius:var(--r-sm);border:1.5px solid var(--border);
+  transition:.15s;position:relative;
+}
+.vmatch-row.correct{background:var(--green-pale);border-color:rgba(26,158,92,0.3)}
+.vmatch-row.wrong{background:#FEF2F2;border-color:rgba(239,68,68,0.35)}
+.vmatch-row.unset{border-color:var(--border)}
+.vmatch-thumb{
+  width:56px;height:56px;border-radius:6px;
+  object-fit:cover;flex-shrink:0;
+  border:1px solid var(--border);background:var(--surface3);
+  cursor:pointer;
+}
+.vmatch-thumb:hover{opacity:.85}
+.vmatch-info{flex:1;min-width:0}
+.vmatch-num{font-size:10px;color:var(--text3);margin-bottom:1px}
+.vmatch-name{font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vmatch-fname{font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vmatch-actions{display:flex;gap:5px;flex-shrink:0;align-items:center}
+.vmatch-btn{padding:4px 9px;border-radius:5px;border:1.5px solid var(--border);background:var(--surface);font-size:10px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;transition:.15s;white-space:nowrap}
+.vmatch-btn.ok{border-color:rgba(26,158,92,0.5);color:var(--green)}
+.vmatch-btn.ok.sel,.vmatch-btn.ok:hover{background:var(--green-pale);border-color:var(--green)}
+.vmatch-btn.bad{border-color:rgba(239,68,68,0.4);color:#EF4444}
+.vmatch-btn.bad.sel,.vmatch-btn.bad:hover{background:#FEF2F2;border-color:#EF4444}
+.vmatch-reassign{
+  font-size:10px;padding:4px 9px;border-radius:5px;
+  border:1px solid var(--border);background:var(--surface);
+  color:var(--text2);cursor:pointer;font-family:'DM Sans',sans-serif;
+  display:none;
+}
+.vmatch-row.wrong .vmatch-reassign{display:inline-block}
+.vmatch-summary{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.vmatch-stat{flex:1;min-width:70px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px;text-align:center}
+.vmatch-stat-n{font-family:'Playfair Display',serif;font-size:22px;font-weight:700;line-height:1}
+.vmatch-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.reassign-modal{
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+  z-index:1000;align-items:center;justify-content:center;padding:20px;
+}
+.reassign-modal.open{display:flex}
+.reassign-box{
+  background:var(--surface);border-radius:var(--r);padding:24px;
+  width:100%;max-width:480px;max-height:80vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.2);
+}
+.reassign-box h3{font-family:'Playfair Display',serif;font-size:18px;margin-bottom:6px}
+.reassign-box p{font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.6}
+.reassign-img-preview{width:100%;max-height:180px;object-fit:cover;border-radius:8px;margin-bottom:14px;border:1px solid var(--border)}
+.reassign-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto}
+.reassign-item{padding:8px 12px;border-radius:6px;border:1.5px solid var(--border);cursor:pointer;font-size:12px;font-weight:500;transition:.15s}
+.reassign-item:hover{border-color:var(--orange);color:var(--orange);background:var(--orange-pale)}
+.reassign-item.assigned{border-color:var(--border2);color:var(--text3);font-style:italic}
+
 /* ── ZIP PROGRESS ── */
 .zip-progress-wrap{
   background:linear-gradient(135deg,var(--green-pale),#F0FDF4);
@@ -353,7 +410,7 @@ tbody tr:hover td{background:var(--surface2)}
     <h1>Glovo Menu <span>Pipeline</span></h1>
     <p>PDF → Glovo Excel &nbsp;·&nbsp; Flow AI Prompts &nbsp;·&nbsp; Auto-renamed ZIP</p>
   </div>
-  <div class="badge">v7.2</div>
+  <div class="badge">v7.3</div>
 </div>
 
 <!-- STEPS -->
@@ -621,24 +678,27 @@ tbody tr:hover td{background:var(--surface2)}
     <div class="card">
       <div class="card-header">
         <div class="card-icon ci-green">🗂</div>
-        <div><div class="card-title">Upload Flow AI Images → Auto-Rename &amp; ZIP</div><div class="card-sub">Select all TurboFlow images at once — matched by order, renamed, zipped</div></div>
+        <div><div class="card-title">Upload &amp; Verify Images</div><div class="card-sub">Drop all TurboFlow images — review thumbnails, fix mismatches, then ZIP</div></div>
       </div>
       <div class="drop-zone" id="imgDrop">
         <input type="file" id="imgFiles" accept="image/*" multiple onchange="onImgFiles(this)">
         <span class="drop-icon">🗂</span>
         <div class="drop-main">Drop all TurboFlow / Flow AI images here</div>
-        <div class="drop-sub">Matched <strong>by order</strong> — image 1 → item 1, image 2 → item 2. Select all at once to preserve order.</div>
+        <div class="drop-sub">You'll see a thumbnail of every image next to its menu item name — verify each one is correct before building the ZIP.</div>
       </div>
       <div id="matchSection" class="hidden mt16">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-          <div class="card-icon ci-orange">🔍</div>
-          <div class="card-title" style="flex:1">Match Results</div>
-          <div style="display:flex;gap:6px">
-            <button onclick="switchMatchMode('sequence')" id="modeSeqBtn" style="padding:5px 12px;border-radius:6px;border:1.5px solid var(--orange);background:var(--orange-pale);font-size:11px;font-weight:600;cursor:pointer;color:var(--orange)">📋 By Order</button>
-            <button onclick="switchMatchMode('name')" id="modeNameBtn" style="padding:5px 12px;border-radius:6px;border:1.5px solid var(--border);background:var(--surface);font-size:11px;font-weight:600;cursor:pointer;color:var(--text3)">🔤 By Name</button>
-          </div>
+        <!-- Visual verification grid -->
+        <div class="vmatch-summary">
+          <div class="vmatch-stat"><div class="vmatch-stat-n" id="vm-total">0</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">Total</div></div>
+          <div class="vmatch-stat"><div class="vmatch-stat-n" style="color:var(--green)" id="vm-ok">0</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">✓ Correct</div></div>
+          <div class="vmatch-stat"><div class="vmatch-stat-n" style="color:#EF4444" id="vm-bad">0</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">✗ Wrong</div></div>
+          <div class="vmatch-stat"><div class="vmatch-stat-n" style="color:var(--muted)" id="vm-missing">0</div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">Missing</div></div>
         </div>
-        <div class="match-list" id="matchList"></div>
+        <div class="vmatch-toolbar">
+          <span style="font-size:11px;color:var(--text2)">Click a thumbnail to enlarge · Click <strong>✓ Correct</strong> or <strong>✗ Wrong</strong> to verify · Click <strong>Reassign</strong> to fix mismatches</span>
+          <button class="btn btn-outline btn-sm" onclick="markAllCorrect()" style="margin-left:auto">✓ Mark All Correct</button>
+        </div>
+        <div class="vmatch-grid" id="vmatchGrid"></div>
         <div class="alert" id="matchAlert" style="margin-top:12px"></div>
         <button class="btn btn-green btn-full" style="margin-top:16px" id="buildZipBtn" onclick="buildZip()">
           🔥 Build &amp; Download ZIP Package
@@ -701,6 +761,24 @@ tbody tr:hover td{background:var(--surface2)}
 </div>
 
 </div><!-- /shell -->
+
+<!-- Reassign Modal -->
+<div class="reassign-modal" id="reassignModal">
+  <div class="reassign-box">
+    <h3>🔄 Reassign Image</h3>
+    <p id="reassignDesc">Select which menu item this image should be assigned to:</p>
+    <img id="reassignPreview" class="reassign-img-preview" src="" alt="Preview">
+    <div class="reassign-list" id="reassignList"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-outline btn-sm" onclick="closeReassign()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Image lightbox -->
+<div class="reassign-modal" id="lightboxModal" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" style="max-width:90vw;max-height:85vh;border-radius:10px;object-fit:contain;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+</div>
 <script>
 // ══ STATE ══
 let menuItems=[],uniqueItems=[],uploadedFileData=null,matchedImages=[];
@@ -1091,20 +1169,27 @@ document.addEventListener('DOMContentLoaded',()=>{
 });
 
 // ══ IMAGE MATCHING ══
-// Matching mode: 'sequence' (TurboFlow order-based) or 'name' (filename-based)
 let matchMode='sequence';
+let imageObjectURLs={}; // imageKey → objectURL for thumbnails
+let verifyState={};     // imageKey → 'ok'|'bad'|''
+let reassignTarget=null; // index being reassigned
 
 function onImgFiles(input){
   const files=Array.from(input.files);if(!files.length)return;
-  // Sort files — TurboFlow names them with numbers, sort numerically
+  // Revoke old object URLs
+  Object.values(imageObjectURLs).forEach(u=>URL.revokeObjectURL(u));
+  imageObjectURLs={};verifyState={};
+  // Sort numerically by any numbers in filename
   files.sort((a,b)=>{
     const na=a.name.replace(/[^0-9]/g,'');
     const nb=b.name.replace(/[^0-9]/g,'');
     if(na&&nb) return parseInt(na)-parseInt(nb);
     return a.name.localeCompare(b.name);
   });
+  // Create object URLs for thumbnails
+  files.forEach(f=>{imageObjectURLs[f.name]=URL.createObjectURL(f);});
   doMatch(files);
-  renderMatchResults();
+  renderVisualMatch();
   $('matchSection').classList.remove('hidden');
 }
 
@@ -1141,32 +1226,122 @@ function doMatch(files){
   }
 }
 
-function renderMatchResults(){
-  const ok=matchedImages.filter(m=>m.matched&&!m.extra).length;
-  const total=uniqueItems.length;const miss=total-ok;
+function renderVisualMatch(){
+  const items=matchedImages.filter(m=>!m.extra);
+  const matched=items.filter(m=>m.matched).length;
+  const missing=items.filter(m=>!m.matched).length;
+  const wrong=items.filter(m=>verifyState[m.key]==='bad').length;
+  const ok=items.filter(m=>verifyState[m.key]==='ok').length;
 
-  $('matchList').innerHTML=matchedImages.filter(m=>!m.extra).map((m,i)=>`
-    <div class="match-row ${m.matched?'ok':'miss'}">
-      <div class="dot ${m.matched?'dot-ok':'dot-miss'}"></div>
-      <div style="width:24px;font-size:10px;color:var(--text3);flex-shrink:0;text-align:center">${i+1}</div>
-      <div class="match-name">${m.key}.jpeg</div>
-      <div class="match-src">${m.matched?'← '+m.file.name:'no image — will skip'}</div>
-    </div>`).join('');
+  if($('vm-total')) $('vm-total').textContent=items.length;
+  if($('vm-ok')) $('vm-ok').textContent=ok;
+  if($('vm-bad')) $('vm-bad').textContent=wrong;
+  if($('vm-missing')) $('vm-missing').textContent=missing;
 
+  const grid=$('vmatchGrid');
+  if(!grid) return;
+  grid.innerHTML=items.map((m,i)=>{
+    const vs=verifyState[m.key]||'';
+    const rowCls=vs==='ok'?'correct':vs==='bad'?'wrong':'unset';
+    const thumbUrl=m.file?imageObjectURLs[m.file.name]:'';
+    const thumbHtml=thumbUrl
+      ?`<img class="vmatch-thumb" src="${thumbUrl}" onclick="openLightbox('${thumbUrl}')" title="Click to enlarge">`
+      :`<div class="vmatch-thumb" style="display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--border2)">?</div>`;
+    const okCls='vmatch-btn ok'+(vs==='ok'?' sel':'');
+    const badCls='vmatch-btn bad'+(vs==='bad'?' sel':'');
+    return `<div class="vmatch-row ${rowCls}" id="vmrow_${i}">
+      ${thumbHtml}
+      <div class="vmatch-info">
+        <div class="vmatch-num">#${i+1}</div>
+        <div class="vmatch-name">${m.key}</div>
+        <div class="vmatch-fname">${m.file?m.file.name:'⚠ No image uploaded'}</div>
+      </div>
+      <div class="vmatch-actions">
+        ${m.file?`
+        <button class="${okCls}" onclick="setVerify('${m.key}',${i},'ok')">✓ Correct</button>
+        <button class="${badCls}" onclick="setVerify('${m.key}',${i},'bad')">✗ Wrong</button>
+        <button class="vmatch-reassign" onclick="openReassign(${i})">Reassign →</button>`
+        :'<span style="font-size:10px;color:var(--text3)">Missing</span>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Update alert
   const al=$('matchAlert');
-  if(miss===0){al.className='alert alert-success';al.textContent=`✅ All ${ok} images matched in order and will be renamed correctly.`;}
-  else if(ok>0){al.className='alert alert-warn';al.textContent=`⚠ ${ok} of ${total} images matched. You uploaded ${matchedImages.filter(m=>m.file&&!m.extra).length} images for ${total} menu items. Upload all ${total} images at once.`;}
-  else{al.className='alert alert-error';al.textContent=`❌ No images matched. Make sure you select ALL downloaded images at once and try again.`;}
-
-  $('expectedList').innerHTML=uniqueItems.map((it,i)=>{
-    const m=matchedImages[i];
-    return `<div class="match-row ${m?.matched?'ok':''}">
-      <div class="dot ${m?.matched?'dot-ok':'dot-wait'}"></div>
+  if(!al) return;
+  if(missing===0&&wrong===0){
+    al.className='alert alert-success';
+    al.textContent=`✅ All ${matched} images loaded. Verify each image above then build the ZIP.`;
+  } else if(missing>0){
+    al.className='alert alert-warn';
+    al.textContent=`⚠ ${matched} images loaded, ${missing} missing. Upload all TurboFlow images at once.`;
+  }
+  // Update expected list tab
+  $('expectedList').innerHTML=items.map((m,i)=>`
+    <div class="match-row ${m.matched?'ok':''}">
+      <div class="dot ${m.matched?'dot-ok':'dot-wait'}"></div>
       <div style="width:20px;font-size:10px;color:var(--text3);text-align:center">${i+1}</div>
-      <div class="match-name">${it.imageKey}.jpeg</div>
-      <div class="match-src">${m?.matched?'✓ '+m.file.name:'not yet uploaded'}</div>
-    </div>`;}).join('');
+      <div class="match-name">${m.key}.jpeg</div>
+      <div class="match-src">${m.matched?'✓ '+m.file.name:'not yet uploaded'}</div>
+    </div>`).join('');
 }
+
+function renderMatchResults(){ renderVisualMatch(); }
+
+function setVerify(key,i,state){
+  verifyState[key]=verifyState[key]===state?'':state;
+  renderVisualMatch();
+}
+
+function markAllCorrect(){
+  matchedImages.filter(m=>!m.extra&&m.matched).forEach(m=>{verifyState[m.key]='ok';});
+  renderVisualMatch();
+}
+
+// Lightbox
+function openLightbox(url){
+  $('lightboxImg').src=url;
+  $('lightboxModal').classList.add('open');
+}
+function closeLightbox(){ $('lightboxModal').classList.remove('open'); }
+
+// Reassign modal
+function openReassign(idx){
+  reassignTarget=idx;
+  const m=matchedImages.filter(mi=>!mi.extra)[idx];
+  const thumbUrl=m.file?imageObjectURLs[m.file.name]:'';
+  $('reassignPreview').src=thumbUrl;
+  $('reassignDesc').textContent=`This image (${m.file?m.file.name:''}) is currently assigned to: "${m.key}". Which menu item should it be?`;
+  // Build list of all menu items
+  const assignedKeys=new Set(matchedImages.filter(mi=>!mi.extra).map(mi=>mi.key));
+  $('reassignList').innerHTML=uniqueItems.map((it,i)=>{
+    const isCurrent=it.imageKey===m.key;
+    return `<div class="reassign-item ${isCurrent?'assigned':''}" onclick="doReassign(${idx},${i})">
+      <span style="color:var(--text3);font-size:10px;margin-right:6px">#${i+1}</span>
+      ${it.imageKey}
+      ${isCurrent?'<span style="color:var(--text3);font-size:10px"> ← current</span>':''}
+    </div>`;
+  }).join('');
+  $('reassignModal').classList.add('open');
+}
+
+function doReassign(fromIdx,toIdx){
+  // Swap the files between the two positions
+  const items=matchedImages.filter(m=>!m.extra);
+  const fromFile=items[fromIdx].file;
+  const toFile=items[toIdx].file;
+  items[fromIdx].file=toFile;
+  items[fromIdx].matched=!!toFile;
+  items[toIdx].file=fromFile;
+  items[toIdx].matched=!!fromFile;
+  // Reset verify state for both
+  delete verifyState[items[fromIdx].key];
+  delete verifyState[items[toIdx].key];
+  closeReassign();
+  renderVisualMatch();
+}
+
+function closeReassign(){ $('reassignModal').classList.remove('open'); }
 
 function switchMatchMode(mode){
   matchMode=mode;
@@ -1185,7 +1360,7 @@ function switchMatchMode(mode){
   if(input.files&&input.files.length>0){
     const files=Array.from(input.files);
     files.sort((a,b)=>{const na=a.name.replace(/[^0-9]/g,'');const nb=b.name.replace(/[^0-9]/g,'');if(na&&nb)return parseInt(na)-parseInt(nb);return a.name.localeCompare(b.name);});
-    doMatch(files);renderMatchResults();
+    doMatch(files);renderVisualMatch();
   }
 }
 
