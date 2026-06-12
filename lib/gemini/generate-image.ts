@@ -24,7 +24,7 @@ STYLE REQUIREMENTS:
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-image",
+      model: "gemini-2.0-flash-preview-image-generation",
       contents: [
         {
           role: "user",

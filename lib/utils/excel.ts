@@ -80,59 +80,63 @@ export function parseExcelMenu(buffer: Buffer): MenuItem[] {
   const firstSheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[firstSheetName];
   
-  const rawRows = XLSX.utils.sheet_to_json(worksheet) as Record<string, any>[];
-  const items: MenuItem[] = [];
-
-  for (const row of rawRows) {
-    let item_name = "";
-    let description = "";
-    let price = "N/A";
-    let category = "General";
-
-    // Dynamic field matching based on key names
-    for (const key of Object.keys(row)) {
-      const normalizedKey = key.trim().toLowerCase();
-      const val = String(row[key] ?? "").trim();
-
-      if (normalizedKey.includes("item") && normalizedKey.includes("name")) {
-        item_name = val;
-      } else if (normalizedKey === "name" && !item_name) {
-        item_name = val;
-      } else if (normalizedKey.includes("desc")) {
-        description = val;
-      } else if (normalizedKey.includes("price")) {
-        price = val;
-      } else if (normalizedKey.includes("cat") || normalizedKey.includes("section")) {
-        category = val;
-      }
-    }
-
-    // Fallbacks
-    if (!item_name) {
-      item_name = row["Item Name"] || row["item_name"] || row["Name"] || row["name"] || "";
-    }
-    if (!description) {
-      description = row["Description"] || row["description"] || "";
-    }
-    if (price === "N/A") {
-      const p = row["Price"] || row["price"];
-      if (p !== undefined && p !== null) {
-        price = String(p);
-      }
-    }
-    if (category === "General") {
-      category = row["Category"] || row["category"] || "General";
-    }
-
-    if (item_name) {
-      items.push({
-        item_name,
-        description,
-        price,
-        category
-      });
+  // Read worksheet as a 2D array of values
+  const allRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+  
+  // Find where the headers start (usually row 0, but scan just in case)
+  let headerIndex = -1;
+  for (let i = 0; i < allRows.length; i++) {
+    const row = allRows[i];
+    if (row && row.some(cell => {
+      const s = String(cell || "").toLowerCase();
+      return s.includes("item") || s.includes("name") || s.includes("category") || s.includes("price");
+    })) {
+      headerIndex = i;
+      break;
     }
   }
-
+  
+  if (headerIndex === -1) {
+    headerIndex = 0;
+  }
+  
+  const headers = allRows[headerIndex] ? allRows[headerIndex].map(h => String(h || "").trim().toLowerCase()) : [];
+  
+  // Find column indices by header content
+  let colCategory = headers.findIndex(h => h.includes("cat") || h.includes("section"));
+  let colItem = headers.findIndex(h => h.includes("item") || h.includes("name") || h.includes("product") || h.includes("title"));
+  let colDesc = headers.findIndex(h => h.includes("desc") || h.includes("detail"));
+  let colPrice = headers.findIndex(h => h.includes("price") || h.includes("cost") || h.includes("ksh"));
+  
+  // Fallbacks: Column A (0) = Category, Column B (1) = Item, Column C (2) = Description, Column D (3) = Price
+  if (colCategory === -1) colCategory = 0;
+  if (colItem === -1) colItem = 1;
+  if (colDesc === -1) colDesc = 2;
+  if (colPrice === -1) colPrice = 3;
+  
+  const items: MenuItem[] = [];
+  
+  for (let i = headerIndex + 1; i < allRows.length; i++) {
+    const row = allRows[i];
+    if (!row || row.length === 0) continue;
+    
+    const category = String(row[colCategory] ?? "").trim();
+    const item_name = String(row[colItem] ?? "").trim();
+    const description = String(row[colDesc] ?? "").trim();
+    const price = String(row[colPrice] ?? "N/A").trim();
+    
+    // Skip empty lines or header rows
+    if (!item_name || item_name.toLowerCase() === "item" || item_name.toLowerCase() === "item name") {
+      continue;
+    }
+    
+    items.push({
+      item_name,
+      description,
+      price: price || "N/A",
+      category: category || "General"
+    });
+  }
+  
   return items;
 }
