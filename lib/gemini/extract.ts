@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import JSZip from "jszip";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
@@ -119,6 +119,33 @@ Example output:
     };
   }
 
+  const menuSchema = {
+    type: Type.ARRAY,
+    description: "List of menu items extracted from the document",
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        item_name: {
+          type: Type.STRING,
+          description: "Name of the food or beverage item, clean and title-cased"
+        },
+        description: {
+          type: Type.STRING,
+          description: "Appetizing description of the item. If not present in the menu, create a short description based on the name."
+        },
+        price: {
+          type: Type.STRING,
+          description: "Price of the item, including currency symbol if visible (e.g. 'KES 850'). If missing, set to 'N/A'."
+        },
+        category: {
+          type: Type.STRING,
+          description: "The category or section the item belongs to (e.g., 'Burgers', 'Pizzas', 'Beverages')"
+        }
+      },
+      required: ["item_name", "description", "price", "category"]
+    }
+  };
+
   const response = await ai.models.generateContent({
     model: "gemini-3.5-flash",
     contents: [
@@ -128,7 +155,7 @@ Example output:
           { text: systemPrompt },
           contentsPart,
           {
-            text: `Extract all menu items from this file: "${fileName}". Return the JSON array only.`,
+            text: `Extract all menu items from this file: "${fileName}".`,
           },
         ],
       },
@@ -136,6 +163,8 @@ Example output:
     config: {
       temperature: 0.1,
       maxOutputTokens: 8192,
+      responseMimeType: "application/json",
+      responseSchema: menuSchema,
     },
   });
 
