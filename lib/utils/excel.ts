@@ -71,3 +71,68 @@ export function createTemplateBuffer(): Buffer {
 
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
+
+/**
+ * Parse an uploaded Excel (.xlsx/.xls) file buffer into MenuItems.
+ */
+export function parseExcelMenu(buffer: Buffer): MenuItem[] {
+  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const firstSheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheetName];
+  
+  const rawRows = XLSX.utils.sheet_to_json(worksheet) as Record<string, any>[];
+  const items: MenuItem[] = [];
+
+  for (const row of rawRows) {
+    let item_name = "";
+    let description = "";
+    let price = "N/A";
+    let category = "General";
+
+    // Dynamic field matching based on key names
+    for (const key of Object.keys(row)) {
+      const normalizedKey = key.trim().toLowerCase();
+      const val = String(row[key] ?? "").trim();
+
+      if (normalizedKey.includes("item") && normalizedKey.includes("name")) {
+        item_name = val;
+      } else if (normalizedKey === "name" && !item_name) {
+        item_name = val;
+      } else if (normalizedKey.includes("desc")) {
+        description = val;
+      } else if (normalizedKey.includes("price")) {
+        price = val;
+      } else if (normalizedKey.includes("cat") || normalizedKey.includes("section")) {
+        category = val;
+      }
+    }
+
+    // Fallbacks
+    if (!item_name) {
+      item_name = row["Item Name"] || row["item_name"] || row["Name"] || row["name"] || "";
+    }
+    if (!description) {
+      description = row["Description"] || row["description"] || "";
+    }
+    if (price === "N/A") {
+      const p = row["Price"] || row["price"];
+      if (p !== undefined && p !== null) {
+        price = String(p);
+      }
+    }
+    if (category === "General") {
+      category = row["Category"] || row["category"] || "General";
+    }
+
+    if (item_name) {
+      items.push({
+        item_name,
+        description,
+        price,
+        category
+      });
+    }
+  }
+
+  return items;
+}

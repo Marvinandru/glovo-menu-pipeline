@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { extractMenuItems } from "@/lib/gemini/extract";
 import { generateItemImage, toFileName } from "@/lib/gemini/generate-image";
-import { createExcelBuffer } from "@/lib/utils/excel";
+import { createExcelBuffer, parseExcelMenu } from "@/lib/utils/excel";
 import { createZipBuffer, type ZipEntry } from "@/lib/utils/zip";
 
 export const maxDuration = 300; // 5-minute timeout for long processing
@@ -32,10 +32,12 @@ export async function POST(req: NextRequest) {
       "image/jpeg",
       "image/jpg",
       "image/webp",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
     ];
-    if (!allowedTypes.includes(file.type)) {
+    if (!allowedTypes.includes(file.type) && !file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
       return NextResponse.json(
-        { error: "Unsupported file type. Please upload PDF, Word (DOCX/DOC), PNG, JPEG, or WebP." },
+        { error: "Unsupported file type. Please upload PDF, Word (DOCX/DOC), PNG, JPEG, WebP, or Excel (XLSX/XLS)." },
         { status: 400 }
       );
     }
@@ -66,12 +68,22 @@ export async function POST(req: NextRequest) {
       .from("menu-uploads")
       .upload(uploadPath, fileBuffer, { contentType: file.type });
 
-    // ── 2. Extract menu items with Gemini ───────────────────────────
+    // ── 2. Extract menu items ───────────────────────────
     let items;
+    const isExcel =
+      file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      file.type === "application/vnd.ms-excel" ||
+      file.name.endsWith(".xlsx") ||
+      file.name.endsWith(".xls");
+
     try {
-      items = await extractMenuItems(fileBuffer, file.type, file.name);
+      if (isExcel) {
+        items = parseExcelMenu(fileBuffer);
+      } else {
+        items = await extractMenuItems(fileBuffer, file.type, file.name);
+      }
     } catch (extractErr: unknown) {
-      const msg = extractErr instanceof Error ? extractErr.message : "Extraction failed";
+      const msg = extractErr instanceof Error ? extractErr.message : "Extraction/Parsing failed";
       await supabase
         .from("jobs")
         .update({ status: "failed", error_message: msg })

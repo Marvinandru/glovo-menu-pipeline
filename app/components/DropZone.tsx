@@ -2,7 +2,7 @@
 
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, FileImage, FileText, X, AlertCircle } from "lucide-react";
+import { Upload, FileImage, FileText, X, AlertCircle, FileSpreadsheet } from "lucide-react";
 
 interface DropZoneProps {
   onFileAccepted: (file: File) => void;
@@ -20,7 +20,7 @@ export default function DropZone({ onFileAccepted, disabled }: DropZoneProps) {
     (acceptedFiles: File[], rejectedFiles: unknown[]) => {
       setError(null);
       if (rejectedFiles && (rejectedFiles as Array<unknown>).length > 0) {
-        setError("Invalid file type. Please upload PDF, Word (DOCX/DOC), PNG, JPEG, or WebP.");
+        setError("Invalid file type. Please upload PDF, Word (DOCX/DOC), PNG, JPEG, WebP, or Excel (XLSX/XLS).");
         return;
       }
       if (acceptedFiles.length > 0) {
@@ -44,6 +44,8 @@ export default function DropZone({ onFileAccepted, disabled }: DropZoneProps) {
       "image/png": [".png"],
       "image/jpeg": [".jpg", ".jpeg"],
       "image/webp": [".webp"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "application/vnd.ms-excel": [".xls"],
     },
     maxFiles: 1,
     maxSize: 20 * 1024 * 1024, // 20MB
@@ -102,7 +104,7 @@ export default function DropZone({ onFileAccepted, disabled }: DropZoneProps) {
                 : "Drop your menu file here"}
             </p>
             <p className="text-sm text-zinc-500 mt-1">
-              PDF, Word (DOCX/DOC), PNG, JPEG, or WebP — up to 20MB
+              PDF, Word (DOCX/DOC), PNG, JPEG, WebP, or Excel (XLSX/XLS) — up to 20MB
             </p>
           </div>
 
@@ -142,6 +144,11 @@ export default function DropZone({ onFileAccepted, disabled }: DropZoneProps) {
               ) : preview.file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
                 preview.file.type === "application/msword" ? (
                 <FileText className="w-7 h-7 text-blue-400" />
+              ) : preview.file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+                preview.file.type === "application/vnd.ms-excel" ||
+                preview.file.name.endsWith(".xlsx") ||
+                preview.file.name.endsWith(".xls") ? (
+                <FileSpreadsheet className="w-7 h-7 text-emerald-400" />
               ) : (
                 <FileImage className="w-7 h-7 text-blue-400" />
               )}
