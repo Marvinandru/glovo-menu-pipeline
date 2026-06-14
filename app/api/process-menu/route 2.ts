@@ -107,9 +107,7 @@ export async function POST(req: NextRequest) {
           it.image_path = null;
         });
 
-        // Save extracted JSON and move to generation phase. The `.eq(status,
-        // "extracting")` guard means a cancel that already flipped the row to
-        // "failed" won't be resurrected — the loop below then sees it and stops.
+        // Save extracted JSON and move to generation phase
         await supabase
           .from("jobs")
           .update({
@@ -119,20 +117,7 @@ export async function POST(req: NextRequest) {
             items_done: 0,
             extracted_json: items,
           })
-          .eq("id", jobId)
-          .eq("status", "extracting");
-
-        // If a cancel landed before/at this point, don't even start generating.
-        {
-          const { data: cur } = await supabase
-            .from("jobs")
-            .select("status")
-            .eq("id", jobId)
-            .single();
-          if (!cur || cur.status !== "generating") {
-            return; // already cancelled/failed
-          }
-        }
+          .eq("id", jobId);
 
         // ── Generate images for each item ───────────────────────────
         const imageEntries: ZipEntry[] = [];
@@ -140,24 +125,11 @@ export async function POST(req: NextRequest) {
         let failCount = 0;
         let rateLimited = false;
         let rateLimitStop = false; // once true, skip the remaining items
-        let cancelled = false; // user requested stop
         let lastError: string | null = null;
 
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
           const safeName = toFileName(item.item_name);
-
-          // Cooperative cancellation: if the status was flipped away from
-          // "generating" (e.g. /api/job-cancel), stop processing the rest.
-          const { data: cur } = await supabase
-            .from("jobs")
-            .select("status")
-            .eq("id", jobId)
-            .single();
-          if (cur && cur.status !== "generating") {
-            cancelled = true;
-            break;
-          }
 
           if (rateLimitStop) {
             // Rate limit already reached — don't hammer the API for the rest.
@@ -205,15 +177,7 @@ export async function POST(req: NextRequest) {
         }
 
         // ── Package Excel + ZIP ─────────────────────────────────────
-        // When cancelled, keep the "stopped" status the cancel endpoint set;
-        // otherwise advance to the packaging phase.
-        if (!cancelled) {
-          await supabase
-            .from("jobs")
-            .update({ status: "packaging", progress: 90 })
-            .eq("id", jobId)
-            .eq("status", "generating");
-        }
+        await supabase.from("jobs").update({ status: "packaging", progress: 90 }).eq("id", jobId);
 
         const excelBuffer = createExcelBuffer(items, imageFileNames);
         const excelPath = `${jobId}/menu_items.xlsx`;
@@ -240,19 +204,6 @@ export async function POST(req: NextRequest) {
           .createSignedUrl(excelPath, 3600, { download: "menu_items.xlsx" });
         const excelUrl = excelSigned?.signedUrl || null;
 
-        // ── If cancelled: save partial outputs, keep "stopped" status ─
-        if (cancelled) {
-          await supabase
-            .from("jobs")
-            .update({
-              excel_url: excelUrl,
-              zip_url: zipUrl,
-              extracted_json: items,
-            })
-            .eq("id", jobId);
-          return;
-        }
-
         // ── Mark job complete (with a warning if some images failed) ─
         let warning: string | null = null;
         if (failCount > 0) {
@@ -272,8 +223,7 @@ export async function POST(req: NextRequest) {
             extracted_json: items,
             error_message: warning,
           })
-          .eq("id", jobId)
-          .eq("status", "packaging");
+          .eq("id", jobId);
       } catch (error) {
         console.error("Pipeline error:", error);
         const msg = error instanceof Error ? error.message : "An unexpected error occurred during processing.";

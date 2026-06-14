@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Clock, CheckCircle2, XCircle, Loader2, RefreshCw } from "lucide-react";
+import { Clock, CheckCircle2, XCircle, Loader2, RefreshCw, Eye, Square } from "lucide-react";
+
+const ACTIVE_STATUSES = ["pending", "extracting", "generating", "packaging"];
 
 interface Job {
   id: string;
@@ -18,6 +20,8 @@ interface Job {
 
 interface JobHistoryProps {
   refreshTrigger: number; // increment to force refresh
+  onSelectJob?: (jobId: string) => void; // load a job into the main view
+  activeJobId?: string | null; // currently displayed job
 }
 
 const statusIcon: Record<string, React.ReactNode> = {
@@ -29,7 +33,7 @@ const statusIcon: Record<string, React.ReactNode> = {
   pending: <Clock className="w-4 h-4 text-zinc-500" />,
 };
 
-export default function JobHistory({ refreshTrigger }: JobHistoryProps) {
+export default function JobHistory({ refreshTrigger, onSelectJob, activeJobId }: JobHistoryProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,8 +52,39 @@ export default function JobHistory({ refreshTrigger }: JobHistoryProps) {
   };
 
   useEffect(() => {
-    fetchJobs();
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/jobs");
+        if (res.ok && !cancelled) setJobs(await res.json());
+      } catch {
+        // will retry on next refresh
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refreshTrigger]);
+
+  // Auto-refresh while any job is still running, so progress/stop stay current.
+  useEffect(() => {
+    const hasActive = jobs.some((j) => ACTIVE_STATUSES.includes(j.status));
+    if (!hasActive) return;
+    const t = setInterval(fetchJobs, 3000);
+    return () => clearInterval(t);
+  }, [jobs]);
+
+  const handleCancel = async (jobId: string) => {
+    try {
+      await fetch(`/api/job-cancel/${jobId}`, { method: "POST" });
+    } catch {
+      // best-effort
+    } finally {
+      fetchJobs();
+    }
+  };
 
   if (loading) {
     return (
@@ -88,10 +123,20 @@ export default function JobHistory({ refreshTrigger }: JobHistoryProps) {
       </div>
 
       <div className="divide-y divide-zinc-700/50 max-h-[350px] overflow-y-auto">
-        {jobs.map((job) => (
+        {jobs.map((job) => {
+          const isActive = ACTIVE_STATUSES.includes(job.status);
+          const isClickable = !!onSelectJob && (job.status === "completed" || isActive);
+          return (
           <div
             key={job.id}
-            className="px-5 py-3.5 flex items-center gap-3 hover:bg-zinc-700/20 transition-colors"
+            onClick={isClickable ? () => onSelectJob!(job.id) : undefined}
+            className={`px-5 py-3.5 flex items-center gap-3 transition-colors ${
+              isClickable ? "cursor-pointer" : ""
+            } ${
+              activeJobId === job.id
+                ? "bg-emerald-500/10"
+                : "hover:bg-zinc-700/20"
+            }`}
           >
             {statusIcon[job.status] || statusIcon.pending}
 
@@ -99,14 +144,44 @@ export default function JobHistory({ refreshTrigger }: JobHistoryProps) {
               <p className="text-sm text-zinc-300 truncate">{job.file_name}</p>
               <p className="text-xs text-zinc-600 mt-0.5">
                 {new Date(job.created_at).toLocaleString()} •{" "}
-                {job.total_items > 0 ? `${job.total_items} items` : "—"}
+                {isActive && job.total_items > 0
+                  ? `${job.items_done}/${job.total_items} • ${job.progress}%`
+                  : job.total_items > 0
+                  ? `${job.total_items} items`
+                  : "—"}
               </p>
             </div>
 
             <div className="flex items-center gap-2">
+              {isClickable && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectJob!(job.id);
+                  }}
+                  className="flex items-center gap-1 text-xs text-zinc-300 hover:text-white bg-zinc-700/60 hover:bg-zinc-600 px-2.5 py-1 rounded-md transition-colors"
+                >
+                  <Eye className="w-3 h-3" />
+                  View
+                </button>
+              )}
+              {isActive && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCancel(job.id);
+                  }}
+                  className="flex items-center gap-1 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-2.5 py-1 rounded-md transition-colors"
+                  title="Stop this job"
+                >
+                  <Square className="w-3 h-3" />
+                  Stop
+                </button>
+              )}
               {job.status === "completed" && job.excel_url && (
                 <a
                   href={job.excel_url}
+                  onClick={(e) => e.stopPropagation()}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 px-2.5 py-1 rounded-md transition-colors"
@@ -117,6 +192,7 @@ export default function JobHistory({ refreshTrigger }: JobHistoryProps) {
               {job.status === "completed" && job.zip_url && (
                 <a
                   href={job.zip_url}
+                  onClick={(e) => e.stopPropagation()}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-blue-400 hover:text-blue-300 bg-blue-500/10 px-2.5 py-1 rounded-md transition-colors"
@@ -131,7 +207,8 @@ export default function JobHistory({ refreshTrigger }: JobHistoryProps) {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

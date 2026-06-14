@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import Link from "next/link";
 import DropZone from "./components/DropZone";
 import JobProgress from "./components/JobProgress";
 import DownloadPanel from "./components/DownloadPanel";
-import ExtractedTable from "./components/ExtractedTable";
+import ImageGallery from "./components/ImageGallery";
 import JobHistory from "./components/JobHistory";
 import {
   Sparkles,
@@ -12,6 +13,9 @@ import {
   Zap,
   ChefHat,
   ArrowRight,
+  AlertTriangle,
+  Image as ImageIcon,
+  Square,
 } from "lucide-react";
 
 interface MenuItem {
@@ -19,6 +23,9 @@ interface MenuItem {
   description: string;
   price: string;
   category: string;
+  image_status?: "pending" | "done" | "failed" | "skipped";
+  image_url?: string | null;
+  image_download_url?: string | null;
 }
 
 interface JobState {
@@ -70,6 +77,7 @@ export default function Home() {
         if (!res.ok) return;
         const data = await res.json();
 
+        const polledItems: MenuItem[] = data.extracted_json || [];
         setJob((prev) => ({
           ...prev,
           status: data.status,
@@ -79,7 +87,10 @@ export default function Home() {
           errorMessage: data.error_message,
           excelUrl: data.excel_url,
           zipUrl: data.zip_url,
-          items: data.extracted_json || prev.items,
+          items: polledItems.length ? polledItems : prev.items,
+          imagesGenerated: polledItems.length
+            ? polledItems.filter((it) => it.image_status === "done").length
+            : prev.imagesGenerated,
         }));
 
         if (data.status === "completed" || data.status === "failed") {
@@ -158,6 +169,50 @@ export default function Home() {
     if (pollingRef.current) clearInterval(pollingRef.current);
   };
 
+  // Stop the currently-viewed running job. Polling will reflect the new status.
+  const handleStop = async () => {
+    if (!job.jobId) return;
+    try {
+      await fetch(`/api/job-cancel/${job.jobId}`, { method: "POST" });
+    } catch {
+      // best-effort; polling will surface the result
+    }
+  };
+
+  // Load a previous job from history into the main view (table + downloads).
+  const handleSelectJob = useCallback(async (jobId: string) => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    setIsProcessing(false);
+    try {
+      const res = await fetch(`/api/job-status/${jobId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const items: MenuItem[] = data.extracted_json || [];
+      const imagesGenerated = items.filter((it) => it.image_status === "done").length;
+      setJob({
+        jobId: data.id,
+        status: data.status,
+        progress: data.progress ?? 100,
+        totalItems: data.total_items ?? items.length,
+        itemsDone: data.items_done ?? items.length,
+        errorMessage: data.error_message ?? null,
+        excelUrl: data.excel_url ?? null,
+        zipUrl: data.zip_url ?? null,
+        imagesGenerated,
+        items,
+      });
+
+      if (data.status !== "completed" && data.status !== "failed") {
+        startPolling(jobId);
+      }
+
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      // Ignore — selecting a job is best-effort
+    }
+  }, [startPolling]);
+
   const isIdle = job.status === "idle";
   const isActive =
     job.status !== "idle" && job.status !== "completed" && job.status !== "failed";
@@ -184,6 +239,13 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
+            <Link
+              href="/gallery"
+              className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm text-zinc-300 transition-colors"
+            >
+              <ImageIcon className="w-4 h-4" />
+              Gallery
+            </Link>
             <a
               href="/api/template"
               className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm text-zinc-300 transition-colors"
@@ -260,13 +322,22 @@ export default function Home() {
 
             {/* Progress indicator */}
             {isActive && (
-              <JobProgress
-                status={job.status}
-                progress={job.progress}
-                totalItems={job.totalItems}
-                itemsDone={job.itemsDone}
-                errorMessage={job.errorMessage}
-              />
+              <>
+                <JobProgress
+                  status={job.status}
+                  progress={job.progress}
+                  totalItems={job.totalItems}
+                  itemsDone={job.itemsDone}
+                  errorMessage={job.errorMessage}
+                />
+                <button
+                  onClick={handleStop}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition-colors border border-red-500/20"
+                >
+                  <Square className="w-4 h-4" />
+                  Stop Job
+                </button>
+              </>
             )}
 
             {/* Failed state */}
@@ -291,6 +362,12 @@ export default function Home() {
             {/* Completed: Download panel */}
             {isCompleted && (
               <>
+                {job.errorMessage && (
+                  <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400 text-sm">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>{job.errorMessage}</span>
+                  </div>
+                )}
                 <DownloadPanel
                   excelUrl={job.excelUrl}
                   zipUrl={job.zipUrl}
@@ -307,13 +384,19 @@ export default function Home() {
               </>
             )}
 
-            {/* Extracted items table */}
-            {job.items.length > 0 && <ExtractedTable items={job.items} />}
+            {/* Live image gallery — shows each image as it's generated */}
+            {job.items.length > 0 && (
+              <ImageGallery items={job.items} generating={isActive} />
+            )}
           </div>
 
           {/* Right column: Job History */}
           <div className="space-y-6">
-            <JobHistory refreshTrigger={historyRefresh} />
+            <JobHistory
+              refreshTrigger={historyRefresh}
+              onSelectJob={handleSelectJob}
+              activeJobId={job.jobId}
+            />
           </div>
         </div>
       </main>

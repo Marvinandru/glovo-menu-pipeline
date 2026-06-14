@@ -3,13 +3,27 @@ import type { MenuItem } from "./extract";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
+// Valid image-generation model. Override via env if your key has a different tier.
+// NOTE: "gemini-2.0-flash-preview-image-generation" is NOT a real model id (404).
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
+
+function isRateLimit(error: unknown): boolean {
+  const raw = error instanceof Error ? error.message : String(error);
+  return raw.includes("429") || raw.toLowerCase().includes("quota") || raw.toLowerCase().includes("rate");
+}
+
+export type ImageResult =
+  | { buffer: Buffer; mimeType: string }
+  | { error: string; rateLimited: boolean };
+
 /**
- * Generate a food product image for a single menu item using Gemini Imagen.
- * Returns the raw image bytes as a Buffer, or null if generation fails.
+ * Generate a food product image for a single menu item using Gemini.
+ * Single attempt — no retries. On a rate-limit (429) the caller stops the
+ * whole batch instead of hammering the API for every remaining item.
+ * Returns the image bytes on success, or a structured error describing why
+ * it failed (so the UI can surface "rate limit reached", etc.).
  */
-export async function generateItemImage(
-  item: MenuItem
-): Promise<{ buffer: Buffer; mimeType: string } | null> {
+export async function generateItemImage(item: MenuItem): Promise<ImageResult> {
   const prompt = `Professional food photography of "${item.item_name}" — ${item.description}.
 
 STYLE REQUIREMENTS:
@@ -24,7 +38,7 @@ STYLE REQUIREMENTS:
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-preview-image-generation",
+      model: IMAGE_MODEL,
       contents: [
         {
           role: "user",
@@ -50,11 +64,18 @@ STYLE REQUIREMENTS:
       }
     }
 
-    console.warn(`No image generated for: ${item.item_name}`);
-    return null;
+    console.warn(`No image returned for: ${item.item_name}`);
+    return { error: "Model returned no image data.", rateLimited: false };
   } catch (error) {
+    const rateLimited = isRateLimit(error);
     console.error(`Image generation failed for "${item.item_name}":`, error);
-    return null;
+    const raw = error instanceof Error ? error.message : String(error);
+    return {
+      error: rateLimited
+        ? "Image generation rate limit / quota reached."
+        : raw.slice(0, 200),
+      rateLimited,
+    };
   }
 }
 

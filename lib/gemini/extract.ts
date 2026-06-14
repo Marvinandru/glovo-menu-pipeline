@@ -8,6 +8,11 @@ export interface MenuItem {
   description: string;
   price: string;
   category: string;
+  // Per-item image fields, populated during the generation phase.
+  image_path?: string | null; // Supabase Storage path of the generated image
+  image_status?: "pending" | "done" | "failed" | "skipped";
+  image_url?: string | null; // signed display URL (attached by job-status)
+  image_download_url?: string | null; // signed download URL (attached by job-status)
 }
 
 /**
